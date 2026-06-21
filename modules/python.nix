@@ -29,7 +29,7 @@
 
       # Repo-specific: the virtual workspace-root package has no sources to install.
       localOverrides = final: prev: {
-        mixinv2-workspace = prev.mixinv2-workspace.overrideAttrs (_: {
+        co-lambda-workspace = prev.co-lambda-workspace.overrideAttrs (_: {
           buildPhase = "mkdir -p $out";
           installPhase = "true";
           nativeBuildInputs = [ ];
@@ -72,7 +72,7 @@
 
       coLambdaBenchmarkPypy =
         (pythonSetPypy.mkVirtualEnv "co-lambda-benchmark-pypy"
-          (builtins.removeAttrs workspace.deps.default [ "mixinv2-workspace" ])).overrideAttrs
+          (builtins.removeAttrs workspace.deps.default [ "co-lambda-workspace" ])).overrideAttrs
         (old: {
           venvIgnoreCollisions = [ "*" ];
           meta = (old.meta or { }) // {

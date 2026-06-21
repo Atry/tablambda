@@ -1,16 +1,16 @@
 [project]
-name = "mixinv2-workspace"
+name = "co-lambda-workspace"
 version = "0.0.0.dev0"
-description = "A dependency injection framework with pytest-fixture syntax, plus a configuration language for declarative programming"
+description = "An interpreter that reads pure lambda-terms as the least fixpoint of a first-order shape relation, with example applications and the accompanying paper"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 authors = [{ name = "Yang, Bo", email = "yang-bo@yang-bo.com" }]
-keywords = ["mixinv2", "mixin", "composition", "dependency-injection"]
+keywords = ["lambda-calculus", "least-fixpoint", "coalgebra", "rational-tree", "interpreter"]
 dependencies = ["co-lambda", "co-lambda-examples"]
 
 [project.urls]
-Repository = "https://github.com/Atry/MIXINv2"
+Repository = "https://github.com/Atry/co-lambda"
 
 [tool.uv]
 # Supported target environments: CPython 3.11 and PyPy 3.11 (PyPy 7.3.20 implements the

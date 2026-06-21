@@ -18,8 +18,8 @@ supported-markers = [
 members = [
     "co-lambda",
     "co-lambda-examples",
+    "co-lambda-workspace",
     "fixpoints",
-    "mixinv2-workspace",
 ]
 
 [[package]]
@@ -542,6 +542,79 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "co-lambda", editable = "packages/co-lambda" }]
+
+[[package]]
+name = "co-lambda-workspace"
+version = "0.0.0.dev0"
+source = { virtual = "." }
+dependencies = [
+    { name = "co-lambda", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+    { name = "co-lambda-examples", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "aiosqlite", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+    { name = "ipykernel", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+    { name = "jupyter", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+    { name = "jupyter-collaboration", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+    { name = "jupyter-mcp-server", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+    { name = "jupyter-mcp-tools", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+    { name = "jupyterlab", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+    { name = "limited-shell", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+    { name = "nbconvert", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+    { name = "ordered-set", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+    { name = "papermill", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+    { name = "py-spy", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+    { name = "pyflyby", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+    { name = "pyright", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+    { name = "pytest", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+    { name = "pytest-asyncio", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+    { name = "pytest-env", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+    { name = "pytest-freezegun", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+    { name = "pytest-frozen-uuids", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+    { name = "pytest-randomly", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+    { name = "pytest-recording", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+    { name = "ruff", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+    { name = "starlette", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+    { name = "syrupy", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+    { name = "vcrpy", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "co-lambda", editable = "packages/co-lambda" },
+    { name = "co-lambda-examples", editable = "packages/co-lambda-examples" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "aiosqlite", specifier = ">=0.22.1" },
+    { name = "ipykernel", specifier = ">=7.1.0" },
+    { name = "jupyter", specifier = ">=1.1.1" },
+    { name = "jupyter-collaboration", specifier = "==4.0.2" },
+    { name = "jupyter-mcp-server", specifier = ">=0.18.2" },
+    { name = "jupyter-mcp-tools", specifier = ">=0.1.4" },
+    { name = "jupyterlab", specifier = "==4.4.1" },
+    { name = "limited-shell", specifier = ">=0.10.10" },
+    { name = "nbconvert", specifier = ">=7.16.6" },
+    { name = "ordered-set", specifier = ">=4.1.0" },
+    { name = "papermill", specifier = ">=2.6.0" },
+    { name = "py-spy", specifier = ">=0.4.1" },
+    { name = "pyflyby", specifier = ">=1.10.2" },
+    { name = "pyright", specifier = ">=1.1.407" },
+    { name = "pytest", specifier = ">=9.0.2" },
+    { name = "pytest-asyncio", specifier = ">=1.3.0" },
+    { name = "pytest-env", specifier = ">=1.5.0" },
+    { name = "pytest-freezegun", specifier = ">=0.4.2" },
+    { name = "pytest-frozen-uuids", specifier = ">=0.3.5" },
+    { name = "pytest-randomly", specifier = ">=4.0.1" },
+    { name = "pytest-recording", specifier = ">=0.13.4" },
+    { name = "ruff", specifier = ">=0.14.3" },
+    { name = "starlette", specifier = ">=0.50.0" },
+    { name = "syrupy", specifier = ">=5.0.0" },
+    { name = "vcrpy", specifier = ">=7.0.0" },
+]
 
 [[package]]
 name = "colorama"
@@ -1650,79 +1723,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/9d/55/d01f0c4b45ade6536c51170b9043db8b2ec6ddf4a35c7ea3f5f559ac935b/mistune-3.2.0.tar.gz", hash = "sha256:708487c8a8cdd99c9d90eb3ed4c3ed961246ff78ac82f03418f5183ab70e398a", size = 95467, upload-time = "2025-12-23T11:36:34.994Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9b/f7/4a5e785ec9fbd65146a27b6b70b6cdc161a66f2024e4b04ac06a67f5578b/mistune-3.2.0-py3-none-any.whl", hash = "sha256:febdc629a3c78616b94393c6580551e0e34cc289987ec6c35ed3f4be42d0eee1", size = 53598, upload-time = "2025-12-23T11:36:33.211Z" },
-]
-
-[[package]]
-name = "mixinv2-workspace"
-version = "0.0.0.dev0"
-source = { virtual = "." }
-dependencies = [
-    { name = "co-lambda", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-    { name = "co-lambda-examples", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "aiosqlite", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-    { name = "ipykernel", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-    { name = "jupyter", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-    { name = "jupyter-collaboration", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-    { name = "jupyter-mcp-server", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-    { name = "jupyter-mcp-tools", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-    { name = "jupyterlab", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-    { name = "limited-shell", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-    { name = "nbconvert", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-    { name = "ordered-set", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-    { name = "papermill", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-    { name = "py-spy", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-    { name = "pyflyby", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-    { name = "pyright", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-    { name = "pytest", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-    { name = "pytest-asyncio", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-    { name = "pytest-env", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-    { name = "pytest-freezegun", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-    { name = "pytest-frozen-uuids", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-    { name = "pytest-randomly", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-    { name = "pytest-recording", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-    { name = "ruff", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-    { name = "starlette", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-    { name = "syrupy", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-    { name = "vcrpy", marker = "implementation_name == 'cpython' or implementation_name == 'pypy'" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "co-lambda", editable = "packages/co-lambda" },
-    { name = "co-lambda-examples", editable = "packages/co-lambda-examples" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "aiosqlite", specifier = ">=0.22.1" },
-    { name = "ipykernel", specifier = ">=7.1.0" },
-    { name = "jupyter", specifier = ">=1.1.1" },
-    { name = "jupyter-collaboration", specifier = "==4.0.2" },
-    { name = "jupyter-mcp-server", specifier = ">=0.18.2" },
-    { name = "jupyter-mcp-tools", specifier = ">=0.1.4" },
-    { name = "jupyterlab", specifier = "==4.4.1" },
-    { name = "limited-shell", specifier = ">=0.10.10" },
-    { name = "nbconvert", specifier = ">=7.16.6" },
-    { name = "ordered-set", specifier = ">=4.1.0" },
-    { name = "papermill", specifier = ">=2.6.0" },
-    { name = "py-spy", specifier = ">=0.4.1" },
-    { name = "pyflyby", specifier = ">=1.10.2" },
-    { name = "pyright", specifier = ">=1.1.407" },
-    { name = "pytest", specifier = ">=9.0.2" },
-    { name = "pytest-asyncio", specifier = ">=1.3.0" },
-    { name = "pytest-env", specifier = ">=1.5.0" },
-    { name = "pytest-freezegun", specifier = ">=0.4.2" },
-    { name = "pytest-frozen-uuids", specifier = ">=0.3.5" },
-    { name = "pytest-randomly", specifier = ">=4.0.1" },
-    { name = "pytest-recording", specifier = ">=0.13.4" },
-    { name = "ruff", specifier = ">=0.14.3" },
-    { name = "starlette", specifier = ">=0.50.0" },
-    { name = "syrupy", specifier = ">=5.0.0" },
-    { name = "vcrpy", specifier = ">=7.0.0" },
 ]
 
 [[package]]
