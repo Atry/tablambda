@@ -1,0 +1,5 @@
+# Machine-generated Python: the defunctionalization compiler (DEFUN) self-compiled to a module of
+# @interned closure classes, per Python version (the _py<ver> tag). Do not edit by hand.
+# Regenerate with the console script co-lambda-regen-compiler
+# (python -m co_lambda._compiler_artifact).
+* linguist-generated=true

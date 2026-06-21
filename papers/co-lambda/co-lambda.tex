@@ -1,0 +1,1138 @@
+% =====================================================================
+%  Solving Coalgebraic Equations in the Pure $\lambda$-Calculus
+% ---------------------------------------------------------------------
+%  Shared body. This file carries NO \documentclass: it is \input by two
+%  entry points that supply the class (mimicking ../inheritance-calculus):
+%    * preprint.tex   -- arXiv / preprint  (acmart, nonacm)
+%    * submission.tex -- POPL submission   (acmart, review, anonymous)
+%  Build both with: latexmk  (see latexmkrc)
+% ---------------------------------------------------------------------
+%  STATUS: working draft.
+%  * Placeholders are marked \TODO{...} and render in red.
+%  * Every bibliography entry is UNVERIFIED: author/title are best-effort
+%    recollections; years, venues, volumes, and pages are marked [verify].
+%    Do not cite from this file without checking each entry.
+% =====================================================================
+
+%% acmart already loads amsmath, amssymb, amsthm, xcolor, and hyperref;
+%% only mathtools needs to be added here.
+\usepackage{mathtools}
+
+%% listings renders the machine-generated Python in the compiler appendix.
+\usepackage{listings}
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  breakatwhitespace=false,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  language=Python,
+  xleftmargin=1em,
+  aboveskip=0.4\baselineskip,
+  belowskip=0.4\baselineskip,
+}
+
+%% algorithm2e renders the weak-head / tabling pseudocode in Section~\ref{sec:bridge}.
+\usepackage[ruled,vlined,linesnumbered]{algorithm2e}
+\SetKwProg{Fn}{function}{:}{}
+\SetKwFunction{TABLED}{Tabled}
+\SetKwFunction{TABLEDWHNF}{TabledWHNF}
+\SetKwFunction{RESOLVE}{Resolve}
+\SetKwFunction{WHNF}{WHNF}
+\SetKwFunction{Subst}{Subst}
+\SetKw{Break}{break}
+
+%% tikz renders the edit-distance call-tree / DP-grid figure in Section~\ref{sec:application}.
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, fit}
+
+%% breqn auto-breaks the long generated lambda terms in the edit-distance code listing (Appendix).
+\usepackage{breqn}
+
+% --- draft placeholder macro ------------------------------------------
+\newcommand{\TODO}[1]{\textcolor{red}{[\textbf{TODO:} #1]}}
+\newcommand{\citeTODO}[1]{\textcolor{red}{[\textbf{cite:} #1]}}
+
+% --- general notation --------------------------------------------------
+\newcommand{\Set}{\mathbf{Set}}
+\newcommand{\Beh}{B}                         % behavior functor B = M F
+\newcommand{\rfp}{\varrho}                   % rational fixpoint
+\newcommand{\behav}{\mathsf{beh}}            % behavior map into the final coalgebra
+\newcommand{\outm}{\mathsf{out}}             % structure map: the iteration of the equation morphism
+\newcommand{\stepm}{e}                       % equation morphism (the map e)
+\newcommand{\Pow}{\mathcal{P}}
+\newcommand{\iter}[1]{#1^{\dagger}}          % Elgot iteration
+
+% --- lambda-instance notation (used only in the WHNF bridge/examples) ---
+\newcommand{\Sh}{\mathsf{Sh}}
+\newcommand{\Lamsh}{\mathsf{Lam}}
+\newcommand{\Appsh}{\mathsf{App}}
+\newcommand{\Varsh}{\mathsf{Var}}
+\newcommand{\dlam}{\mathord{\downarrow}\lambda}
+\newcommand{\dhead}{\mathord{\downarrow}\mathsf{h}}
+\newcommand{\darg}{\mathord{\downarrow}\mathsf{a}}
+\newcommand{\subt}[2]{#1\!\downarrow\!#2}
+\newcommand{\reduces}{\twoheadrightarrow}
+\newcommand{\bred}{\rightarrow_{\beta}}
+\newcommand{\present}{\mathtt{present}}
+
+% --- theorem environments ---------------------------------------------
+%% acmart provides theorem/lemma/proposition/corollary (acmplain) and
+%% definition/example (acmdefinition), all sharing the `theorem' counter.
+%% Only `remark' is missing, so we add it on the same shared counter.
+\AtBeginDocument{%
+  \theoremstyle{acmdefinition}%
+  \newtheorem{remark}[theorem]{Remark}%
+}
+
+% --- conditional-compilation switches -------------------------------
+% Entry points choose which parts of this shared file to compile by
+% setting these booleans before \input{co-lambda}.  The defaults below
+% include everything, so the full build (preprint.tex) sets nothing;
+% submission.tex clears the appendices, supplement.tex clears the body.
+% The single bibliography lives at the end and is always emitted, since
+% both the main matter and the appendices cite.
+\makeatletter
+\@ifundefined{ifColambdaBody}{\newif\ifColambdaBody\ColambdaBodytrue}{}
+\@ifundefined{ifColambdaAppendix}{\newif\ifColambdaAppendix\ColambdaAppendixtrue}{}
+\makeatother
+
+\begin{document}
+
+\title{Cyclic Graphs and Memoization for Free}
+\subtitle{Solving Coalgebraic Equations in the Pure $\lambda$-Calculus}
+
+\author{Bo Yang}
+\affiliation{%
+  \institution{Figure AI Inc.}
+  \city{San Jose}
+  \state{California}
+  \country{USA}
+}
+\email{yang-bo@yang-bo.com}
+\thanks{The author completed this work independently and outside the scope of employment at Figure AI. No Figure AI time, funding, or other resources were used in support of this work.}
+
+% 【摘要的职责（作者定）】摘要只呈现 claim，不解释【怎么做到】。读者读完知道我们主张了什么、却不知道如何实现，
+%   就是最好的摘要——how 是正文的事。据此机制性文字已删（把状态读成一层数据、每个状态一个顶点、重复折成 back
+%   edge；以及"states 是一阶项、结构同一性可判定、由求值而非项识别重复"这套 why），第 1、2 段并为一段（贡献+演示），
+%   只保留动机与主张。盲读里"看不出怎么做到"的 HOW 困惑（如编译器为何"是"一个 λ-term）都【不是缺陷】，不为消除
+%   它们而膨胀摘要或砍掉主张。但"claim 本身不清楚"是真缺陷：原"self-hosts on its own source"已换——self-hosting
+%   是重载词，易被读成"用同一语言实现该语言 runtime"（L-in-L），与我们的主张不同；改用"a bootstrap compiler that
+%   compiles its own source"。摘要里出现 bootstrap compiler 这种行话没有问题。
+\begin{abstract}
+  Representing and transforming cyclic and infinite data in the pure $\lambda$-calculus normally requires an added recursion construct, a \texttt{letrec}, a $\mu$-binder, or a built-in $Y$ for graph reduction, and sharing the repeated work of a memoized or dynamic-programming function normally requires an impure cache. We show that no extension is needed. We apply tabling, the standard method for solving a least-fixpoint equation, to weak-head reduction; this defines a new operational semantics for the pure $\lambda$-calculus that keeps each term's standard lazy meaning. A term that reaches finitely many distinct states comes out as a finite graph, possibly cyclic; the calculus stays pure, and the graph is sound and independent of reduction order. We implemented this operational semantics as a $\lambda$-calculus interpreter and ran it on three regimes. It does dynamic programming automatically, sharing repeated subproblems with no memoization table. It creates and transforms cyclic graphs with no added recursion construct. And it decides an unproductive loop, returning $\bot$ for $\Omega$ in finite time.
+
+  We define computable coalgebras, the structures that support tabling. What it returns is a graph, so the $\lambda$-calculus becomes a DSL for graph computation: the memo table of dynamic programming, the transposition table of game search, and the visited set of graph reachability and points-to analysis are all tabling on state identity, and none of them is written by hand. Compilation is one more such problem: we write a bootstrap compiler that compiles its own source, all as a pure $\lambda$-term.
+\end{abstract}
+
+\keywords{coalgebra, coalgebraic equations, rational fixpoint, algebraic compactness,
+  structure as identity, least fixpoint, rational trees, tabling, weak-head reduction, Datalog,
+  program analysis, domain-specific language,
+\texorpdfstring{$\lambda$-calculus}{lambda-calculus}}
+
+\maketitle
+
+\ifColambdaBody
+\section{Introduction}\label{sec:intro}
+
+\subsection{Manipulating Graphs in $\lambda$-Calculus}
+
+Ordinary reduction in the pure $\lambda$-calculus never builds a cyclic data structure. Consider the stream of zeros, the pure term $r = Y\,(\mathtt{cons}\,0)$, with the fixed-point combinator $Y$ and $\mathtt{cons}\,h\,t$ the stream $t$ with $h$ prepended. The term $r$ reduces to $\mathtt{cons}\,0\,r$, so its tail is $r$ again: the stream that loops on itself. Yet $r$ has no finite normal form: ordinary reduction unfolds it to $0,0,0,\dots$ forever and never folds it into a finite circular graph. To obtain a finite cycle one reaches outside the calculus for an added recursion construct, a \texttt{letrec}, say, that names the loop~\cite{ariola1997-explicit-recursion}.
+
+Creating the cycle is only half of the difficulty. Take the textbook $\mathtt{map}$, which applies a function to every element of a list and is itself an ordinary pure $\lambda$-term (Appendix~\ref{app:dsl}). On the cyclic stream $r$, the term $\mathtt{map}\;\mathtt{succ}\;r$ (with $\mathtt{succ}$ adding one) reduces to $\mathtt{cons}\,1\,(\mathtt{map}\;\mathtt{succ}\;r)$, whose inner $\mathtt{map}\;\mathtt{succ}\;r$ is the same term again, so an ordinary evaluator walks the cycle forever and never folds the result back into a cycle. Nothing in the term records that $r$ was already visited. To make the traversal terminate the function must itself become cycle-aware: it has to remember the nodes already visited, which needs a mutable set or dictionary, and it has to recognize a revisited node, which needs a reference-equality primitive that compares nodes by pointer identity. That primitive is what a pure language forbids: reference equality tells apart structures of equal value, so it breaks referential transparency, the rule that equal values may be substituted freely.
+
+The standard account therefore pays twice, an extension to create the cycle and an impurity to transform it.
+
+\subsection{Automating Dynamic Programming}
+
+The obstruction is not special to infinite data. Edit distance, the fewest single-character insertions, deletions, and substitutions that turn one string into another, has the textbook recurrence~\cite{wagner1974-string-correction} on the strings' suffixes: reading head by head, equal heads recurse on both tails at no cost, unequal heads pay one and take the best of a substitution, a deletion, and an insertion, and once a string is empty the cost is the length of what remains of the other. Written as a pure $\lambda$-term, with each string a list that applies a head/tail handler $\lambda h.\lambda t$ or, when empty, a default,\footnote{Data here are encoded as their own case analysis (the Scott and Church encodings~\cite{mogensen1992-self-interpretation}): a list applied to two arguments runs the first on its head and tail or returns the second when empty, and a boolean applied to two arguments returns the first if true and the second if false, so $\mathtt{eq}\,h_a\,h_b$ applied to the two terms that follow it selects one of them.} and with $\mathtt{eq}$ comparing two characters, $\mathtt{min}_3$ the three-way minimum, $\mathtt{succ}$ adding one, and $\mathtt{len}$ the length:
+\[
+  \begin{aligned}
+    &\mathtt{ed} = Y\,\big(\lambda\mathit{ed}.\,\lambda a.\,\lambda b.\\
+      &\quad a\,\big(\lambda h_a.\lambda t_a.\\
+        &\qquad b\,\big(\lambda h_b.\lambda t_b.\\
+          &\qquad\quad (\mathtt{eq}\,h_a\,h_b)
+          &&\text{compare the two heads}\\
+          &\qquad\qquad (\mathit{ed}\,t_a\,t_b)
+          &&\text{equal: recurse on both tails, no cost}\\
+          &\qquad\qquad \mathtt{succ}\,\big(\mathtt{min}_3\,
+            \underbrace{(\mathit{ed}\,t_a\,t_b)}_{\text{substitute}}\,
+            \underbrace{(\mathit{ed}\,t_a\,b)}_{\text{delete}}\,
+        \underbrace{(\mathit{ed}\,a\,t_b)}_{\text{insert}}\big)\big)\\
+      &\qquad (\mathtt{len}\,a)\big)
+      &&\text{$b$ empty: delete all of $a$}\\
+    &\quad (\mathtt{len}\,b)\big).
+    &&\text{$a$ empty: insert all of $b$}
+  \end{aligned}
+\]
+This term computes the right distance, but its naive evaluation is exponential, the three recursive calls re-expanding overlapping suffix pairs. The subproblems are pairs of suffixes $(t_a,t_b)$, and a suffix is a shared sub-term of the inputs, not a copy, so if each repeated pair were computed once the work would be the $(m{+}1)(n{+}1)$ distinct pairs for inputs of lengths $m$ and $n$, the classic $O(mn)$ dynamic-programming table. But ordinary reduction has no way to notice that a pair has recurred, so it recomputes. Like the cyclic $\mathtt{map}$, the obvious pure program is correct yet unusable: one diverges, the other explodes.
+
+\subsection{Solving Coalgebraic Equations}
+
+The resolution adds nothing to the calculus. We give an interpreter, and a compiler, for the pure $\lambda$-calculus under which these very programs run efficiently, their meaning unchanged: $Y\,(\mathtt{cons}\,0)$ evaluates to a finite cyclic graph, $\mathtt{map}\,\mathtt{succ}$ over it to the finite circle of ones, and $\mathtt{ed}$ in $O(mn)$ time and space, each an instance of a regime Table~\ref{tab:cases} sets out. An implementation accompanies the paper\anon[ as supplementary material]{, openly available at \url{https://github.com/Atry/MIXINv2}~\cite{colambda}}. The one idea is to read a program as a \emph{coalgebraic equation}, a state exposing one layer of data over its successor states, and let the $\lambda$-calculus be its \emph{solver}: it tables the states it has seen and folds a recurrence on the decidable structural identity of the term a state is built from, whereas the only identity on the function that term computes, $\beta$-equality, is undecidable. The recognition is tabling's, not an operation a term performs, so the calculus stays pure. And the solution is not checked against the meaning, it \emph{is} the meaning: what a program denotes is by definition the tree its equation unfolds to, so computing the solution cannot change the semantics (Section~\ref{sec:bridge}).
+
+The construction is not special to streams, strings, or the $\lambda$-calculus. The tabling needs only states that expose layers and name successor states (Appendix~\ref{sec:coalgebras}); it never asks how a state produces its layer. Any reduction function supplies such states: a rule that at each state either exposes data or takes an internal step, the layer being whatever the internal steps eventually expose, with the $\lambda$-calculus's own reduction, stopped as soon as the outermost shape of the term is settled, as one instance (Appendix~\ref{sec:reductions}). So for any reduction function, wherever tabling returns a finite graph it returns exactly the semantics that function defines. It returns one on the data that reaches finitely many states, each reached by a terminating reduction, a strict sub-fragment of the rational data, those with finitely many distinct subtrees; and beyond the rational data no solution-preserving procedure returns a finite cyclic graph at all, since there is none to return (Theorem~\ref{thm:ceiling}). And since data such as lists and trees are themselves pure $\lambda$-terms (the Scott encoding), every such computable system is again a $\lambda$-term, and one interpreter solves them all on the fragment each reaches with finitely many states, turning the pure $\lambda$-calculus into a small domain-specific language whose memoization falls out of state identity: Datalog queries, graph reachability and points-to analysis, game-tree (minimax) search, and dynamic programming (Section~\ref{sec:graphs}, Appendix~\ref{app:dsl}).
+
+\begin{table*}
+  \caption{The five regimes a term can present. \emph{Previous} is ordinary reduction, which unfolds the
+    solution without tabling; \emph{Ours} is the tabled evaluation of Appendix~\ref{sec:tabling}. A state is
+    \emph{productive} when reduction there exposes a layer rather than continuing silently. The two
+    semantics realize the same denotation and differ only in representation, folding a rational infinite
+    tree into a finite cyclic graph, and in termination, deciding an unproductive loop as $\bot$ in finite
+  time.}
+  \label{tab:cases}
+  \centering\footnotesize
+  \setlength{\tabcolsep}{5pt}
+  \begin{tabular}{@{}p{0.26\textwidth}p{0.13\textwidth}p{0.15\textwidth}p{0.33\textwidth}@{}}
+    \hline
+    Condition & Previous & Ours & Example \\
+    \hline
+    Productive, finitely many states, acyclic & Finite tree & Finite graph & $\mathtt{ed}\,a\,b$ \\
+    Productive, infinitely many distinct states & Infinite tree & Infinite graph & $Y\,(\lambda s.\,\mathtt{cons}\,0\,(\mathtt{map}\,\mathtt{succ}\,s))$ \\
+    Productive, finitely many states, cyclic & Infinite tree & Finite cyclic graph & $Y\,(\mathtt{cons}\,0)$ \\
+    Unproductive, no repeated state & Diverges & Diverges & $Y\,(\lambda f.\lambda x.\,f\,(\mathtt{succ}\,x))\,0$ \\
+    Unproductive, repeated state & Diverges & Unproductive $\bot$ & $\Omega$ \\
+    \hline
+  \end{tabular}
+\end{table*}
+
+\subsection{Contributions}
+\begin{itemize}
+  \item \emph{The construction.} \emph{Tabled evaluation} applied to any coalgebra: follow its
+    one-step map a layer at a time and reuse a tabled state whenever one recurs, so the back
+    edges that fold a cycle cost nothing extra (Appendices~\ref{sec:coalgebras},
+    \ref{sec:tabling}). Any reduction function presents such a coalgebra through the least
+    fixpoint of its internal steps, under which an unproductive loop, one returning to its
+    start without exposing a layer, is decided as $\bot$ (undefined) in finite time
+    (Appendix~\ref{sec:reductions}; Definition~\ref{def:out}). The construction is parametric in
+    an effect (the internal process, for instance $\beta$-reduction) and a signature (the shape
+    of each layer).
+  \item \emph{The theory.} We prove \textsf{Tabled} (tabling) \emph{sound} (the finite graph it returns
+    unfolds to exactly the solution, Theorem~\ref{thm:correctness}), \emph{bounded at the rationality ceiling} (no
+      solution-preserving procedure clears the rational fragment, and \textsf{Tabled} returns a finite graph
+      on a decidable sub-fragment of it, the data reaching finitely many states each by a terminating
+      reduction, Theorems~\ref{thm:termination},
+    \ref{thm:ceiling}), and the equation
+    \emph{uniquely solved} (least equals greatest, so induction and coinduction coincide and
+      the least fixpoint does real work only in deciding an unproductive loop as $\bot$,
+    Theorem~\ref{thm:unique-coalgebra}, Remarks~\ref{rem:compact}, \ref{rem:leastessential}).
+  \item \emph{Instances.} Weak-head reduction of the pure $\lambda$-calculus is one such equation,
+    the interpreter (Sections~\ref{sec:bridge}, \ref{sec:application}), on which an ordinary
+    $\mathtt{map}$ folds a circular list into a circular list and a naive walk terminates where
+    evaluation diverges; because any computable coalgebra Scott-encodes, the one interpreter is also a small
+    domain-specific language solving Datalog, graph reachability and points-to analysis, minimax
+    search, and dynamic programming (Appendix~\ref{app:dsl}); and compilation is itself such an
+    equation, the same interpreter solving it into a bootstrap compiler to Python
+    % 作者注：编译器在 §4.2（sec:graphs）作为"图→图"的同类余代数方程引入；其特点（content-addressed
+    % closures、更粗相等性、~8x bootstrap）留 §4.3。§4.3 落地后可把此处 \ref 精确到 §4.3。
+    (Section~\ref{sec:graphs}).
+\end{itemize}
+
+\section{A Tabled Operational Semantics}\label{sec:bridge}
+% §2 全局约束（适用于整节）。每段的具体思路写在该段正文上方的注释里；本块只放
+% 跨段的共性规则。作者视角的理由一律写进注释，绝不进正文。
+%  * 只谈 term、weak-head reduction、tabling。不要出现 "coalgebra"/"coalgebraic"
+%    （那是后文的发展），也不要 "behavioral"、"counterintuitive"、"surprisingly"。
+%    正文不用破折号。不要写出与 Table~\ref{tab:cases} 矛盾的论断。
+%  * 术语纪律（三件事，绝不互混）：
+%      【a】"halts at t" = 从 t 出发的单条 silent run 算出 out(t)（逐项、一层）。
+%          Omega 重访 -> bot，是停机；row 4（Y(\f.\x.f(succ x))0）经过无穷多个
+%          不同的 term，既不暴露也不重复，所以不停机。
+%      【b】把整棵 LLT 渲染成有限共享图 = 指针相等的 read-back；当且仅当 R(t) 有限
+%          且其上每个 out 都停机【a】时才终止。这是后面章节要用的元语言性质；
+%          不要把它叫作 "halts"，也不要作为 §2 的读者材料陈述。
+%      全文禁止："halts <=> finitely many states / 停机 <=> 有限态"。
+%          假命题：row 4 的 R(t)={t} 有限却不停机，所以"R 有限"推不出【a】；
+%          【a】与"R 有限"互相独立，渲染【b】两者都需要。row 2 是反向见证：
+%          每个 out 都停机，但 R 无限。
+%  * WHNF != HNF：weak-head reduction 下抽象永远 productive（暴露 Lam、不进 body）；
+%    bot 只来自发散的 head spine。lam x.Omega 在这里是 Lam(bot)，不是 bot
+%    （bot 是 HNF/Boehm 的读法）。
+%  * productive 的无限树不是发散：它是合法的余归纳 LLT（折叠可能降维）。
+%    "diverges" 只留给 unproductive 的情形。
+% ---------------------------------------------------------------------
+% 动机（高层，一两句）：固定 lambda term 的若干指称语义中的一种，即 Levy-Longo
+% （lazy）树，并说明我们要把它求解成一张可能有环的图。不要重复 Introduction 或
+% Table 1（cyclic-data 问题、Y(cons 0)/map/Omega 例子、各 regime）。
+This section is about how to solve a $\lambda$-term's lazy denotational semantics into a graph that may be cyclic.
+
+% Recall 1（前人工作，需引用）：Levy-Longo 树，并就地把 weak-head reduction 定义
+% 为它的手段。为什么选这套语义而非别的（作者视角，不要讲给读者）：它是本文关心的
+% cyclic、memoized 程序在其下才有意义的 lazy 语义，对 case study 有用。
+\paragraph{The L\'evy--Longo tree}
+This lazy semantics is the term's L\'evy--Longo tree~\cite{longo1983-set-theoretical-models, levy-longo}; we recall it, and with it weak-head reduction. The terms are pure $\lambda$-terms in de Bruijn form, a variable $\Varsh_i$, an abstraction $\Lamsh(t)$, or an application $\Appsh(t, t')$, with no recursion binder. \emph{Weak-head reduction} contracts the head redex of a term, the leftmost redex along its function spine, until none remains; the term then stands in \emph{weak-head normal form}, a variable, an abstraction, or an application headed by a variable, unless no normal form is reached and reduction runs forever. The \emph{L\'evy--Longo tree} of a term is its hereditary weak-head normal form: expose the normal form's top constructor, recurse into the immediate sub-terms, and place $\bot$ where no normal form is reached \cite{barendregt, wadsworth-graph, abramsky-ong}.
+
+% Recall 2（前人工作，需引用，与 recall 1 相互独立）：tabling，对方程 X -> M(FX)
+% 的最小不动点求解，抽象地陈述，不带任何 lambda 细节。不存在"tabled solution of
+% weak-head reduction"这样一个单一的前人工作。
+\paragraph{Tabling}
+We recall \emph{tabling}, the standard method for solving a least-fixpoint equation from a root \cite{tamaki-sato, tabling-slg, vanemden-kowalski}. Such an equation maps each state to one layer of data over successor states, or to $\bot$, and its solution maps each state to the tree this unfolds to. Tabling computes that solution: expose the root's layer, recurse into its successor states, and keep a table of the states reached, keyed by a decidable identity; a state already tabled is reused as one shared vertex, and a state still being processed becomes a back edge that closes a cycle. Nothing here is specific to the $\lambda$-calculus.
+
+% 我们的工作，组装：weak-head reduction 本身就是这样一个方程（out(t) = 暴露的一层，
+% 或当 silent run 不暴露任何层时为 bot）；从根 term 对 out 做 tabling 即算出 LLT，
+% 并把重复项折成一张可能有环的图。bot 这一情形是该 reduction 的最小不动点
+% （附录 app:out），也是 least 与 greatest 真正有别的唯一之处；这里用一个从句带过，
+% 不要升格为定理（prop:out 留在附录）。
+\paragraph{Tabling weak-head reduction}
+The two combine because weak-head reduction makes each term such an equation: a term exposes one layer, the top constructor of its weak-head normal form over its immediate sub-terms, or $\bot$ when it has no normal form, and the sub-terms are again terms. We write $\outm(t)$ for this exposed layer; where the silent reduction revisits a term without exposing one, $\outm(t)$ is $\bot$, the least fixpoint of that reduction (Appendix~\ref{sec:reductions}). Tabling $\outm$ from a root term computes the term's L\'evy--Longo tree (Algorithm~\ref{alg:whnf}) and folds it into a graph that may be cyclic. That tree is the denotation we fixed, so the graph changes the representation, not the meaning, and $\outm(t)$ is one layer of it. The tree and the graph are one point of the approximation order on trees, $\bot$ least and a tree refined by exposing further layers, which we show is a domain (Appendix~\ref{sec:order}).
+
+% 算法（本 session 讨论得出的作者侧决定）：
+%  * 【通用性做进结构】Tabled(out, t) 是通用 tabling driver，把一层结构映射 out（= §4 的 \outm，全文已用此名）当回调
+%    传入；weak-head 那层叫 WHNF，作为 out 传给 Tabled；入口 TabledWHNF(t) ≜ Tabled(WHNF, t)（保留 TabledWHNF 这个
+%    名字给正文其余处引用）。memoize + 重入检测的递归 resolver 叫 Resolve（正文「tabling \outm」的
+%    那个操作），嵌在 Tabled 里、闭包捕获 out 与本轮状态；WHNF 通过收到的 Resolve 回调去归约 head。
+%    【命名沿用先前工作（本轮作者定）】tabling 是先前工作，所以 driver 不叫 Solve（像在发明算法）而叫 Tabled，
+%    per-state resolver 叫 Resolve，interpreter 叫 TabledWHNF；摘要据此说「we apply tabling」，不说「我们发明了算法」。
+%    这样 driver 完全不认识 λ（calculus 只在 WHNF 里读），换 out 即换实例——通用性写进代码形态，不只写 caption。
+%    对应实现 fixpoints/_core.py：通用 driver（__get__ 的轮迭代）+ 注册的 func（=out）；func 通过子节点的
+%    .weak_head_normal_form（=Resolve）回调。
+%  * 【命名定稿：step→out，resolver→Resolve】把结构映射叫 out 是为了和 §4/正文已有的 \outm 统一（原来只有伪代码
+%    叫 step，是个孤例）；per-state resolver 叫 Resolve。渲染：out 用 $\outm$（=\mathsf{out}），
+%    Resolve 用 KwFunction；若想更紧凑可改 $\widehat{\outm}$。
+%  * 伪代码标识符规范：函数名用 CamelCase，不带空格、不带下划线（Tabled / Resolve / WHNF / Subst），
+%    与 algorithm2e 的 \SetKw* 一致。
+%  * 伪代码只体现“用项本身作为表的键/索引”（结构同一性），不提怎么做索引——理论上直接用
+%    整个结构做索引也可行。intern 是优化，只在正文脚注出现；pseudocode 与 caption 都不提。
+%  * 【算法结构：定稿——通用 Kleene 迭代 driver，不要再特化成单遍】曾经试过特化成“单遍 + 重入即 ⊥”。
+%    【已弃用】：我们的证明（app:faithful）本身就是【通用】的（构造近似序 + 证 unfolding 单调 + recall tabled
+%    evaluation 的 faithfulness），并没证“weak-head 单遍即够”；画成单遍会让页面上的算法与附录证的对象不是同一个
+%    （re-audit 的 A1 缺口）。所以保留 Tabled 的多轮 Kleene driver 形态。
+%  * 【更新算法：用 deep merge（join ⊔），不用整体替换】定稿。原因：整体替换 approx[u]:=layer 不符合 approximation
+%    order——只在 layer⊒approx[u] 时才等于 join，本身不是良定义的不动点步（能丢信息/下降）；⊔ 才单调、良定义。用 Out
+%    把孩子分解成引用后，out(u) 是【一层 M(F(·))、原子的】（孩子是引用，深度在图里），所以对本文证明范围（确定性
+%    effect M=Delay，每节点层单值、只 ⊥→该层）⊔ 退化成 flat join（⊥-或-相等-或-冲突），节点级【不真正递归】；真正逐
+%    slot 的 deep merge 只在 F(M X) 才需要，超出本文已证范围。但实现按【严于律己宽以待人】给最通用的 deep merge
+%    （fixpoints._core 的 merge 回调 + Node 的 _deep_merge），论文只证 flat 特例——deep merge 是安全超集，只会降低证明难度。
+%  * 【⊔ 的冲突分支取代原 assert】两个【不同】的非 ⊥ 层无上界=⊤=冲突，按 offensive programming 直接 crash（structure
+%    map 非单调/有 bug 才触发）。这正是原 assert（approx[u]=⊥ ∨ layer=approx[u]）抓的矛盾，现在内化进 ⊔。实现里 merge
+%    是 fixpoint_cached_property 的【可选回调】：WHNF/HNF 传 _deep_merge，loose_bound（int tall 域、会 0→2→3 爬）不传、
+%    仍走替换分支，所以不会误报——merge 按 property 选用，不强加给共享 infra。
+%  * 【勿过度声称】不要写“对 weak-head，最小不动点的唯一实事就是判 ⊥”这类话——我们没证这个，作者明确反对。
+%    rem:leastessential 只说：least≠greatest 体现在“从 unguarded reduction function 产出 out”这一步（通用陈述），
+%    并未说 weak-head 实例里 ⊥-判定是唯一实事。caption 只陈述可观察事实（Ω 这种重入停在 ⊥），不加“唯一/仅”。
+%    Tabled=tabling out，忠实性在 app:faithful。
+%  * 【caption 去 coalgebra（作者视角）】原 caption 末尾有 “This covers every computable coalgebra, a signature of
+%    layers under a deterministic effect with a decidable state identity … WHNF is one instance.” —— 违反本节节首约束
+%    “§2 不出现 coalgebra/coalgebraic”，已删。这句的实质（同一个 driver 覆盖任意 computable coalgebra）是作者侧的
+%    通用性主张，正文层面只在 §4.1（sec:generality）+ app:faithful 给，不在 §2 的伪代码 caption 喊。driver 不认识 λ、
+%    换 out 即换实例这层通用性，已由上方 ~line 280 的注记保留；caption 现在只作操作性表述（out 是参数、WHNF 是
+%    weak-head 实例），不提 coalgebra、不作 “covers every …” 的全称。
+\begin{algorithm*}
+  \DontPrintSemicolon
+  \KwData{$\mathit{approx}$, each term's layer, kept across rounds, $\bot$ until it is exposed; $\mathit{cache}$, the layers solved in the current round, also the graph returned; $\mathit{stack}$, the terms whose layer is being computed}
+  \Fn{\TABLED{$\outm$, $t$}}{
+    \Fn{\RESOLVE{$u$}}{
+      \lIf{$u \in \mathit{cache}$}{\Return $\mathit{cache}[u]$ \tcp*{solved this round}}
+      \lIf{$u \in \mathit{stack}$}{\Return $\mathit{approx}[u]$ \tcp*{re-entry: $\bot$ on the first round}}
+      $\mathit{stack} \gets \mathit{stack} \cup \{u\}$\;
+      $\mathit{layer} \gets \outm(u,\; \textsf{Resolve})$\;
+      $\mathit{stack} \gets \mathit{stack} \setminus \{u\}$\;
+      $\mathit{merged} \gets \mathit{approx}[u] \sqcup \mathit{layer}$ \tcp*{deep merge in the approximation order; a conflict crashes}
+      \lIf{$\mathit{merged} \neq \mathit{approx}[u]$}{$\mathit{changed} \gets \mathbf{true}$}
+      $\mathit{approx}[u] \gets \mathit{merged}$;\; $\mathit{cache}[u] \gets \mathit{merged}$\;
+      \Return $\mathit{merged}$\;
+    }
+    \Repeat{$\lnot\,\mathit{changed}$}{
+      $\mathit{cache} \gets \emptyset$;\; $\mathit{stack} \gets \emptyset$;\; $\mathit{changed} \gets \mathbf{false}$\;
+      \RESOLVE{$t$}\;
+    }
+    \Return $\mathit{cache}$ \tcp*{the graph: each reachable term to its layer}
+  }
+  \caption{The general tabling driver. \textsf{Tabled} computes the least fixpoint of a one-layer structure map $\outm$ by Kleene iteration from $\bot$: each round, through \textsf{Resolve}, the memoized resolution of $\outm$, it recomputes one layer per reachable term and merges that layer into the term's running approximation, a re-entry into a term still on the $\mathit{stack}$ returning that approximation, until a round adds nothing. The merge $\sqcup$ is the join in the approximation order, a deep merge that ascends rather than overwrites and crashes on a conflict, two incompatible non-$\bot$ layers at one term. A recurring term is a $\mathit{cache}$ hit, folded into a back edge; the memo is keyed by the term itself, by structural identity. The structure map $\outm$ is a parameter; \textsf{WHNF} (Algorithm~\ref{alg:whnfmap}) is the instance for weak-head reduction.}
+  \label{alg:whnf}
+\end{algorithm*}
+
+\begin{algorithm*}
+  \DontPrintSemicolon
+  \Fn{\WHNF{$t$, \textsf{Resolve}}}{
+    \Switch{$t$}{
+      \uCase{$\Varsh\,i$}{\Return $\Varsh\,i$}
+      \uCase{$\Lamsh\,b$}{\Return $\Lamsh\,b$ \tcp*{an abstraction is already a whnf; weak head stops at $\lambda$}}
+      \Case{$\Appsh\,f\,a$}{
+        \Switch{$\textsf{Resolve}(f)$}{
+          \uCase{$\Lamsh\,b$}{\Return $\textsf{Resolve}(\Subst{b, a})$ \tcp*{head redex: $\beta$-contract and continue}}
+          \uCase{$\Varsh\,\_ \mid \Appsh\,\_$}{\Return $\Appsh\,f\,a$ \tcp*{rigid head: expose the application}}
+          \Case{$\bot$}{\Return $\bot$ \tcp*{the function has no whnf}}
+        }
+      }
+    }
+  }
+  \caption{The weak head structure map, passed to \textsf{Tabled} as $\outm$. \textsf{WHNF} exposes one layer of $t$ and is the only function that reads the calculus; it calls back through \textsf{Resolve} to reduce the head, $\beta$-contracting a head redex and continuing, stopping at a rigid head or an abstraction, or returning $\bot$ when the head has no whnf.}
+  \label{alg:whnfmap}
+\end{algorithm*}
+
+\begin{algorithm}
+  \DontPrintSemicolon
+  \Fn{\TABLEDWHNF{$t$}}{
+    \Return \TABLED{\textsf{WHNF}, $t$}\;
+  }
+  \caption{The L\'evy--Longo evaluator: the weak head map \textsf{WHNF} tabled by the driver \textsf{Tabled}. $\textsf{TabledWHNF}(t)$ returns the graph whose unfolding is the L\'evy--Longo tree of $t$.}
+  \label{alg:solvewhnf}
+\end{algorithm}
+
+% 我们的工作：soundness/faithfulness。正文只“声称”——一两句直觉 + 指向 app:faithful 的
+% 证明，不在正文给完整证明。
+% 两个 recall 分工：上面的 Tabling 段是“补课”，只讲 tabling 是什么（WHAT）；忠实性定理的
+% recall（tabled evaluation 对 lfp 忠实，已知结果）是承重件，连同三条前提的引理与证明都在
+% app:faithful。三条前提：(1) approximation order 是 domain；(2) unfolding 单调；
+% (3) 状态一阶有限 ⇒ 结构同一性可判定（原 Lemma 2.1，已移 app:faithful 并改名 Finiteness，
+%     附录里不提 intern）。intern 只在正文脚注：它是把可判定同一性变成 O(1) 指针测试的实现
+%     优化，脚注引 lem:finite 作“intern 会停、故 intern 存在”的证据，并说明不影响正确性。
+% 读者疑问“环怎么形成”由 lem:finite 正面回答：state 是有限 term、不是无限对象，重复 term 按
+% 可判定同一性认出、折成 back edge。thm:unique（lfp=gfp）是另一回事，留正文。
+\paragraph{Soundness}
+The evaluator is sound: tabling $\outm$ from a term $t$ builds a graph that unfolds to the L\'evy--Longo tree of $t$. Algorithm~\ref{alg:whnf} is this tabling: $\textsf{TabledWHNF} = \textsf{Tabled}(\textsf{WHNF}, \cdot)$ runs the general driver \textsf{Tabled}, which iterates a structure map from $\bot$ to its least fixpoint, on the weak head map \textsf{WHNF} that presents one layer of the silent head reduction, a term still being reduced re-entering at its running approximation, and a recurring term folded into a back edge. Tabling is the standard faithful method for a least-fixpoint semantics, and weak-head reduction supplies the three things it needs of its states, an approximation order on the trees it produces, a monotone unfolding, and reachable terms that are finite, acyclic first-order terms with a decidable structural identity,\footnote{The implementation makes this identity a constant-time pointer test by interning (hash-consing) terms as they are built; interning terminates because every reachable term is finite and acyclic (Lemma~\ref{lem:finite}), and it is an optimization that speeds the identity check tabling needs without affecting what tabling computes.} so a recurring term is recognized and folded into a back edge rather than unfolded forever. The lemmas, the recalled faithfulness of tabling, and the proof are in Appendix~\ref{app:faithful}.
+
+% 我们的工作，贡献（b）：读者唯一真正需要被说服的非平凡定理，唯一性（thm:unique，
+% 证明 app:unique）。LLT 同时是 tabling 求得的最小不动点与最大（余归纳）不动点，所以
+% 把重复项折成 back edge 是可靠的，且结果与归约次序无关（解释器与编译器一致）。
+% 本段刻意排除（不要写成读者正文）：
+%   * 不为共享图构造或停机刻画写定理：它们是例行/构造性的（旧的 thm:halting 已删）。
+%   * 可表示性 != solver 实际产出：rational <=> 存在某张有限环图，但 solver 只在
+%     "有限可达态"子片段上才真的产出有限图。这一点、rational ceiling、以及结构同一性达到的
+%     子片段与残余 gap（thm:ceiling）属于 §4 的设计空间讨论。
+%   * 元语言渲染性质【b】（见全局约束）留给后面章节（case study、编译器）；在那里陈述，
+%     不在这里。
+\paragraph{The solution is unique}
+The evaluator ascends from $\bot$, exposing one further layer at a time and folding a recurring term into a back edge. Two things must hold for that to compute the denotation: reading a back edge as the infinite tree it stands for must agree with this bottom-up ascent, and the answer must not depend on which redex is contracted first, since an interpreter and a compiler reduce in different orders.
+
+\begin{theorem}[The solution is unique]\label{thm:unique}
+  The L\'evy--Longo tree of a term is the unique solution of its tabled weak-head reduction: it is at once the least fixpoint the evaluator reaches, ascending from $\bot$, and the greatest, the coinductive tree the cyclic graph unfolds to. Proof in Appendix~\ref{sec:order}.
+\end{theorem}
+
+\noindent Least equals greatest because the reduction is guarded: a term commits the root of its layer before its sub-terms are read, so under the metric in which the distance between two trees halves with the depth of their first disagreement the unfolding is a contraction, and its fixpoints coincide (Appendix~\ref{sec:order}). Folding a recurring term into a back edge is therefore sound, and the result is independent of reduction order, so the interpreter of this section and the compiler built over it compute the same denotation.
+
+% S3 作者视角（节级框定；逐段细节注释分散在各段/各 \input 旁，勿在此堆叠）。
+% 【范围已改：本轮决定，作废旧约束】本节由"只讲 edit distance 一个例子"扩为讲 Table~\ref{tab:cases} 的
+%   第 1、3、5 行三个 regime，各一个 subsection、等深、各配自己的生成图与生成附录。原"只讲这一个例子、不泛化"
+%   的硬约束作废。原因：第 1 行（共享→有限图）只展示了 solver 三种胜场之一；第 3 行（环→有限环图）、第 5 行
+%   （unproductive→⊥）同样关键，§1.1 与 Table 1 已立靶，须在 case study 兑现。挑 1/3/5 而非 2/4：第 2、4 行
+%   Ours=Previous（仍无限 / 仍发散），无新意；1/3/5 恰是 Ours 胜 Previous 的三种情形。
+% 仍守的约束：只讲【解释器】（编译器留 §4.2）；泛化到任意 computable coalgebra 留 §4.1，本节只摆具体实例；
+%   只做复杂度/结构事实分析、不放运行时性能指标；全部素材生成、不手写（细节见各 \input 旁注）。
+% 不变的重点：把机制与例子连起来，逐步 trace 解释器在 TabledWHNF（alg:whnf）上 compute / 命中 / 重入 / 折环 / 判 ⊥。
+% 【统一框架（本轮作者定，贯穿 §3.1/§3.2，是"环/菱形怎么算出来"的总答案）】操作语义上全是【纯函数调用】(β)，
+%   λ 项本身【无环、无共享】；solver 按【interned λ 项】给函数调用做 memo，第二次调用同一项即【命中】。图（环或
+%   DAG）是对这份 memo 的【读法】，不是演算里的构造（"语义上仍是函数调用"）。命中按 Out 的两支被读成两种结构
+%   （alg:whnf）：§3.1 命中【已算完】的调用（多路径到达）= 菱形 / DAG 共享（u ∈ cache；无环；Table 1 第 1 行）；
+%   §3.2 命中【仍在计算中】的调用（tail 字段访问到一个其求值尚未返回的项）= back edge / 自环（u ∈ stack；有环；
+%   Table 1 第 3 行）。故 §3.1 与 §3.2 是【同一 memo 机制的两种读法】。
+% 标签沿用 sec:application；§1 的 DSL 列表/编译器、app:dsl 的 Datalog 的 \ref 指 §4.2（sec:graphs）。
+\section{Case Study: Three Regimes}\label{sec:application}
+
+% 开场段（取代原 §2 的 Implementation 段）：声明实现了算法1（alg:whnf）的解释器、用 Claude Code 做出，并在
+%   本节跑 Table 1 的三行。解释器实为 Claude Code vibe coding 做出，但正文只写 "with Claude Code"，不写
+%   "vibe-coded"（register 偏口语）；"Claude Code" 可入正文（含匿名版），切勿写模型 ID。引用 Table~\ref{tab:cases}
+%   兑现"本节是它的实例化"，并为下面三个 subsection 立线索（第 1、3、5 行）。
+We implemented the tabled evaluation of Algorithm~\ref{alg:whnf} as an interpreter for the pure $\lambda$-calculus with Claude Code, available\anon[ as supplementary material]{~\cite{colambda}}, and run it on three of the regimes Table~\ref{tab:cases} sets out, the three in which the interpreter parts from ordinary reduction: a terminating computation whose repeated work it shares into a finite graph, a productive cycle it folds into a finite cyclic graph, and an unproductive loop it decides as $\bot$ in finite time.
+
+% §3.1 = 第 1 行（共享→有限图）。这是原 edit-distance case study，整段下移为本 subsection；不重述 §1.1 的动机。
+\subsection{Sharing Subproblems: Edit Distance}\label{sec:application-sharing}
+
+% Recall 段（作者侧理由，勿入正文）：edit distance 是 leetcode-hard 级问题，不能假设读者已知问题与标准
+% DP 解法，故在 case study 显式 recall（正文用 "recall" 一词，与 §2 的 "we recall" 同风格）；Introduction
+% 不 recall（保持张力即可）。这里的 recall 是【对照基准】：先摆出标准 O(mn) DP 表，再让正文展示 solver
+% 免费得到它，故与节级注的"不教 DP"不冲突——recall 是给机制一个参照，不是教学展开。
+% 引用：Levenshtein 1966 给"距离/度量"出处（doi-mcp 误配到他人论文、无可靠 DOI，bib 里 \TODO verify）；
+% Wagner--Fischer 1974 给 O(mn) DP 递推/表。
+This is the productive, acyclic regime of Table~\ref{tab:cases}: finitely many states, a finite call tree the interpreter shares into a finite graph. We recall the problem and its standard dynamic program. Edit distance is the fewest single-character insertions, deletions, and substitutions that turn one string into another, the Levenshtein distance~\cite{levenshtein1966-binary-codes}. The textbook recurrence reads the two strings head by head over their suffixes~\cite{wagner1974-string-correction}: equal heads recur on both tails at no cost, unequal heads pay one and take the least of a substitution, a deletion, and an insertion, and an empty string costs the length of what remains of the other. Read literally the recurrence is exponential, its three calls re-expanding the same suffix pairs; computing each distinct pair once leaves the $(m{+}1)(n{+}1)$ pairs of the classic $O(mn)$ table.
+
+The term $\mathtt{ed}$ is this recurrence written in the pure $\lambda$-calculus; Appendix~\ref{app:editdistance-code} lists it in full with its library, down to $Y$ and the BinNat arithmetic. It computes the right distance, yet evaluated naively it explodes; the one observation that tames it, that identical subproblems need be computed only once, is exactly what the interpreter makes, and makes for free: no memoization table, no visited set, and no reference-equality test appears anywhere in $\mathtt{ed}$. This section traces how.
+
+% 本段概念基底：子问题 ed t_a t_b 的两参数是后缀；Scott-list 后缀是输入的【共享子项】（非拷贝），
+% 故同一后缀对 = 同一对 interned 节点 = 同一个 state，兑现 §2 的可判定结构同一性。
+\paragraph{Subproblems are shared sub-terms}
+A subproblem is a call $\mathit{ed}\,t_a\,t_b$, and its two arguments are suffixes of the inputs. A suffix of a Scott-encoded list is not a freshly built list but a sub-term of the original: the tail handler $\lambda h_a.\lambda t_a$ binds $t_a$ to the very node that already represents the rest of $a$. So a given suffix pair is, on every occurrence, the same pair of nodes, and the application $\mathit{ed}\,t_a\,t_b$ assembled from them is one and the same interned node. \textsf{Tabled} keys its table by the constant-time structural identity of interned terms established in Section~\ref{sec:bridge}, so the second time a suffix pair arises its call is already a tabled state, read off rather than re-entered.
+
+\paragraph{The collapse, on a tiny instance}
+Take $a=\mathtt{ab}$ and $b=\mathtt{cd}$ (Figure~\ref{fig:editdistance}). The heads differ, so $\mathit{ed}\,\mathtt{ab}\,\mathtt{cd}$ is one plus the least of three calls: $\mathit{ed}\,\mathtt{b}\,\mathtt{d}$ for a substitution, $\mathit{ed}\,\mathtt{b}\,\mathtt{cd}$ for a deletion, and $\mathit{ed}\,\mathtt{ab}\,\mathtt{d}$ for an insertion. Each interior call branches into three again, and the same subproblem is reached along several of these paths: $\mathit{ed}\,\mathtt{b}\,\mathtt{d}$, for instance, is called by all three of $\mathit{ed}\,\mathtt{ab}\,\mathtt{cd}$, $\mathit{ed}\,\mathtt{ab}\,\mathtt{d}$, and $\mathit{ed}\,\mathtt{b}\,\mathtt{cd}$. The naive recursion re-expands every such repeat, $19$ calls in all here. The interpreter does not: the first argument ranges over the three suffixes $\{\mathtt{ab},\mathtt{b},\varepsilon\}$ of $a$ and the second over the three suffixes $\{\mathtt{cd},\mathtt{d},\varepsilon\}$ of $b$, so there are only $3\times 3=9$ distinct calls. A call reached along several paths is one tabled node with several incoming edges, evaluated once, the highlighted states in the figure; the nine nodes carry the distances between a suffix of $a$ and a suffix of $b$, which is the familiar edit-distance table.
+
+% DAG figure 由 _editdistance_figure.py 跑解释器生成（每格距离真实算出，非手填）。
+% 图中 9 states =(m+1)(n+1)、19 naive calls 都是结构事实（非性能指标，故可用）。
+\begin{figure}
+  \centering
+  \input{generated/editdistance-trace}
+  \caption{The subproblem call graph of $\mathtt{ed}$ on $a=\mathtt{ab}$, $b=\mathtt{cd}$, generated by running
+    the interpreter. Each node is one of the $(m{+}1)(n{+}1)=9$ distinct suffix-pair states, labeled with
+    its edit distance; rows are suffixes of $a$, columns suffixes of $b$. An interior state calls the three
+    subproblems it points to. Because a suffix is a shared sub-term, a subproblem reached along several
+    paths is one interned state, here the highlighted nodes with more than one incoming edge; the interpreter
+  evaluates each of the nine once, where the naive recursion would make $19$ calls.}
+  \label{fig:editdistance}
+\end{figure}
+
+% 本节核心：把 DP 与机制连起来的就是这一段。正文只给几步关键项 AST + 散文，完整 trace 进
+% app:editdistance-trace；trace 由 monkey-patch 解释器观测生成（不手写）。
+\paragraph{Stepping through the interpreter}
+The collapse is not arranged by $\mathtt{ed}$; it is what the tabled evaluation of Algorithm~\ref{alg:whnf} does as it runs. To solve $\mathtt{ed}\,(\mathtt{cons}\,a\,(\mathtt{cons}\,b\,\mathtt{nil}))\,(\mathtt{cons}\,c\,(\mathtt{cons}\,d\,\mathtt{nil}))$, writing $a,b,c,d$ for the BinNat character codes, the one-layer step contracts the head redex, unfolding $Y$ and comparing the two heads with $\mathtt{eq}$; they differ, so the exposed layer is $\mathtt{succ}\,(\mathtt{min}\,\dots)$ over the three recursive calls. The first of them, $\mathtt{ed}\,(\mathtt{cons}\,b\,\mathtt{nil})\,(\mathtt{cons}\,d\,\mathtt{nil})$, is not yet in the table, so the interpreter solves it and records its layer. When the deletion branch later asks for that same term, it is the same interned node, already in the table, and its layer is returned without solving it again: a cache hit, the second edge into one node in the figure. Appendix~\ref{app:editdistance-trace} is the whole run, every subproblem solved and every later occurrence hit, in the order the interpreter reaches them, recorded by instrumenting the interpreter. Both this trace and the listing of Appendix~\ref{app:editdistance-code} are generated, the trace by running the interpreter and the listing from the source terms, not transcribed by hand.
+
+% compute/hit 用小写并 \texttt（与 trace listing 的 token 一致）；本段只给复杂度 O(mn)，不放时间/内存。
+\paragraph{The cost}
+For inputs of lengths $m$ and $n$ the suffix pairs are the $(m{+}1)(n{+}1)$ products of the $m{+}1$ suffixes of $a$ with the $n{+}1$ suffixes of $b$. The interpreter computes each of these states once, the \texttt{compute} lines of the trace, and folds every repeated call into a back edge, the \texttt{hit} lines. Each state does constant work, its two heads compared as fixed-width binary codes over a fixed alphabet and its cost a single successor and three-way minimum on binary naturals, so the $(m{+}1)(n{+}1)$ states do the work of the dynamic-programming table in $O(mn)$ time and space. The recurrence recalled above is transcribed directly; the table that makes it efficient comes entirely from tabling's recognition of a repeated state, not from anything written in the term. That $\mathtt{ed}$ computes the genuine Levenshtein distance is reproduced as a passing test that cross-checks it against that recurrence over a range of inputs\anon[~(supplementary material)]{~\cite{colambda}}.
+
+The obvious pure recurrence and the dynamic-programming table are thus the same program seen twice: the table is what the exponential call tree becomes once identical subproblems are recognized as one state.
+
+% §3.2 = 第 3 行（环→有限环图）。不重述 §1.1 的 cyclic-data 动机，也【不再泛泛说"tail 是环"】（intro 已说）。
+%   本节要讲【怎么算出来的】：结合 §2 伪代码（alg:whnf 的 Tabled/Resolve、alg:whnfmap 的 WHNF）与附录精确 trace。
+% 【实测操作语义，本 session 用真解释器验证，勿漂移】
+%   令 W = λx.(cons 0)(x x)。r = Y(cons 0) 头归约：r → W·W → (cons 0)(W·W) → 暴露 cons cell λc.λn. c 0 (W·W)。
+%   Scott cons cell λc.λn. c h t 是【CPS 回调】；交给回调 c 的 tail 是 t = W·W（Y 产出的自应用），
+%   【不是】语法上的 r（实测 tail is r → False；tail is W·W → True）。原正文"tail 单独 whnf 就是同一个 cell"
+%   说法【不精确】，已废：精确的是 whnf(W·W) 与 whnf(r) 是【同一个 interned cons cell】，且 whnf(W·W) 的 tail 又是 W·W。
+% 【为什么只有 tabling 能折叠——本节真正的卖点】
+%   每次展开 β 都【重新构造】make_app(W,W)，但 interning(hash-cons) 把它折到【已存在的同一节点】
+%   （实测 rebuilt is existing tail → True）。纯 Y 没有 letrec 结，故 call-by-name / call-by-need 每次都得到
+%   一个【全新的】W·W 对象、永远展开 0,0,0,…；唯有按结构同一性 tabling 才认出重复、折成环。
+% 【环 = 对"进行中的重复调用"的读法，语义上仍是函数调用】W·W 第二次被调用落在 Out 的【u ∈ stack】支（仍在算）
+%   → back edge = 环；对照 §3.1 落在【u ∈ cache】支（已算完）→ 菱形。见节级"统一框架"注。
+% 【分工】附录 app:cyclic-zeros-trace 给【精确】term-level trace；本节正文只给【直觉散文】解释那条 trace，
+%   并 \ref alg:whnf / alg:whnfmap / 附录；不复制 trace。对照见证 cons 0 nil：tail 是 nil（非 cons cell），walk 终止、无环。
+\subsection{Folding a Cycle: The Stream of Zeros}\label{sec:application-cycles}
+
+The stream of zeros $r = Y\,(\mathtt{cons}\,0)$ is the productive, cyclic regime of Table~\ref{tab:cases}: finitely many states whose infinite tree the interpreter folds into a finite cyclic graph. It is built from ordinary function calls, with no cycle written into the term; Appendix~\ref{app:cyclic-zeros-code} lists it in full with its library. We follow the interpreter computing it, and watch the cycle form.
+
+\paragraph{What the tail is}
+A Scott cons cell $\lambda c.\lambda n.\,c\,h\,t$ is a continuation: applied to a cons handler $c$ and a nil handler $n$, it calls $c$ on its head $h$ and tail $t$, so the tail is whatever term the cell hands to $c$. For $r$ that term is not ``$r$ again'' but the self-application $W\,W$ that the fixed-point combinator produces, with $W = \lambda x.\,\mathtt{cons}\,0\,(x\,x)$: unfolding $Y$ once rewrites $r$ to $W\,W$, and $W\,W$ exposes the cell $\mathtt{cons}\,0\,(W\,W)$, whose tail is $W\,W$.
+
+\paragraph{How the interpreter folds it}
+\textsf{Tabled} keys its table by the interned term it evaluates (Algorithm~\ref{alg:whnf}). Solving $r$ runs the weak head step (Algorithm~\ref{alg:whnfmap}), which contracts head redexes until the cons cell is exposed, tables $r$, and follows the tail into $W\,W$; solving $W\,W$ exposes the same cell, whose tail is $W\,W$ once more. The fold turns on one fact: that second $W\,W$ is rebuilt from scratch by the substitution, a fresh term a call-by-name or call-by-need evaluator would keep rebuilding, streaming $0,0,0,\dots$ without end. The interpreter interns terms by their structure, so the rebuilt $W\,W$ is the very node it is still solving, a call on the stack, and it closes a back edge there instead of exposing another layer. What it returns is one cons cell whose tail points back to it (Figure~\ref{fig:cyclic-zeros}), the finite cyclic graph that unfolds to $0,0,0,\dots$. The whole run is Appendix~\ref{app:cyclic-zeros-trace}, generated by running the interpreter.
+
+\paragraph{The same recognition as edit distance}
+This is the recognition that shared a subproblem in Section~\ref{sec:application-sharing}, read one notch differently. There a repeated call was one already solved, a diamond where several callers meet at one tabled node; here the repeated call is one still in progress, so reusing it is a back edge, a cycle. In neither does the term carry sharing or a cycle of its own: every step is a function call, and the graph, diamond or circle, is tabling's record of which calls recur.
+
+\begin{figure}
+  \centering
+  \input{generated/cyclic-zeros-graph}
+  \caption{The graph the interpreter returns for $r = Y\,(\mathtt{cons}\,0)$, generated by running the interpreter. The
+    states it tables are $r$ and the self-application $W\,W$ (with $W = \lambda x.\,\mathtt{cons}\,0\,(x\,x)$), each
+    exposing the cons cell with head $0$; $r$ leads in, and the tail of $W\,W$ is $W\,W$ again, the back edge the
+    interpreter closes on re-entering that state, the highlighted self-loop. The finite cyclic graph unfolds to
+  $0,0,0,\dots$, which ordinary reduction would expand forever.}
+  \label{fig:cyclic-zeros}
+\end{figure}
+
+% §3.3 = 第 5 行（unproductive→⊥）。逐步 trace：Ω 头 β-收缩一步 = Ω（同一 interned node），重入 stack、
+%   未暴露任何层 → 返回 running approximation ⊥，有限步停机。素材（生成）：omega-graph（单节点+自环+⊥）、
+%   omega-trace、附录 code/trace。实测事实：self_contraction() is OMEGA；whnf(Ω) is BOTTOM。措辞克制：
+%   不写"判 ⊥ 是 lfp 唯一实事"（作者反对，见 §2 rem:leastessential）；只说这是 ascent-from-⊥ 真正起作用之处。
+\subsection{Deciding an Unproductive Loop: $\Omega$}\label{sec:application-bottom}
+
+The term $\Omega = (\lambda x.\,x\,x)\,(\lambda x.\,x\,x)$ is the unproductive regime of Table~\ref{tab:cases}: a repeated state, where ordinary reduction diverges and the interpreter returns $\bot$ in finite time. It is the self-application $\omega\,\omega$ of $\omega = \lambda x.\,x\,x$, listed in Appendix~\ref{app:omega-code}, and has no constructor to expose. Its one head $\beta$-contraction substitutes $\lambda x.\,x\,x$ for $x$ in $x\,x$, giving $\Omega$ again: the head reduction returns to where it started without ever exposing a layer.
+
+\paragraph{The contractum is the same term}
+Because terms are interned, the contractum $(\lambda x.\,x\,x)\,(\lambda x.\,x\,x)$ is not a fresh copy but the same node as $\Omega$. So when the interpreter contracts the head once and asks for the weak head normal form of the result, it is asking for $\Omega$, the term it is already computing.
+
+\paragraph{Stepping through the interpreter}
+Solving $\Omega$ (Algorithm~\ref{alg:whnf}) puts it on the stack and runs the weak head step (Algorithm~\ref{alg:whnfmap}), which contracts the head redex; the contractum is $\Omega$, the term still on the stack, and nothing has been exposed, so the re-entry returns its running approximation, $\bot$. Recomputing leaves it $\bot$, the iteration has converged, and the interpreter halts where ordinary reduction would contract the same redex without end (Figure~\ref{fig:omega}). This is the stack re-entry of Section~\ref{sec:application-cycles} once more, settled the other way: there a cons cell was exposed before the tail re-entered, so the running approximation was that layer and the reuse carried it back as a cycle; here nothing is exposed before $\Omega$ re-enters, so the approximation is still $\bot$ and the loop is unproductive. Deciding it is where the ascent from $\bot$ of Section~\ref{sec:bridge} does its work. Appendix~\ref{app:omega-trace} is the run, generated by the interpreter.
+
+\begin{figure}
+  \centering
+  \input{generated/omega-graph}
+  \caption{The graph the interpreter returns for $\Omega = (\lambda x.\,x\,x)\,(\lambda x.\,x\,x)$, generated by running
+    the interpreter. The single state's head reduction contracts to the same interned term, so the interpreter
+    re-enters it on the stack with no layer exposed and decides it $\bot$, in finite time, where ordinary
+  reduction would contract forever.}
+  \label{fig:omega}
+\end{figure}
+
+% =====================================================================
+% S4 Discussion 作者视角（节级）：把 §2/§3 的具体结果拔到一般性。本轮只落地 §4.1 的正文（一段话）；
+% §4.2、§4.3 仅以中文作者注释占位，不写英文正文、不渲染。
+\section{Discussion}\label{sec:discussion}
+
+% §4.1 主轴=(1) WHNF 本身是一个余代数方程；(2) 求解它的 technique（alg:whnf）泛化到任何 computable
+% coalgebra。一段话、不引入新形式化；不谈 Scott/DSL（留 §4.2）。正文指向【已 live】的通用证明附录
+% （app:correctness/termination/ceiling）。通用的【定义与定理陈述】已 live 于附录 sec:method（与 §2 的 LLT
+% 轨 app:faithful 分节并列）；通用唯一性定理名为 thm:unique-coalgebra，§2 的 LLT thm:unique 是其实例。
+% 【本轮：§4.1 用散文给出 computable coalgebra 的定义】因为审稿人不读附录，正文必须自带这个术语的定义。本段现在
+%   就地定义：state / structure map / layer / coalgebra / solution，再给 computable = structure map 是 partial
+%   computable（procedure，要么暴露一层、要么永跑；⊥=不停机）+ states 有 decidable identity。措辞与附录
+%   def:computable-coalgebra 的 partiality + partial-computable 一致；【不再用】“deterministic effect / signature”
+%   这类未在正文定义的行话。注意：这里只主张“同一 solver 解任意 computable coalgebra”（technique 的通用性，已证 sound/
+%   terminates/ceiling），【不是】“any computable coalgebra Scott-encodes / solves them all”那条更强、靠例子的主张
+%   （那条属 §4.2/§1，正在按 re-positioning 收口）。
+% 【标题与语气（本轮作者定）】原标题 "Any Computable Coalgebra"（"Any" 是耀武扬威的全称），且正文像在宣告定理。
+%   【语气定稿】教科书式 + 第一人称 we，平铺直叙地说我们想要什么/观察到什么/要求什么/定义什么/结论是什么/在附录证什么：
+%   we want to understand 算法能推广多远 → we observe Tabled 只用两件事(调 structure map + 测状态相等) → we require
+%   structure map 是 partial computable、states 有 decidable identity → we call 这种余代数 computable、we take its solution
+%   为展开树 → we conclude 同一算法适用任意 computable coalgebra → we make this precise in Appendix~\ref{sec:tabling}。
+%   【不要文学化】禁止反问句("How far does … reach?")、"is telling"、"asks of its input" 这类拟人/修辞；要专业、准确。
+%   仍 modest：精确论证(定义/soundness/termination/ceiling)留 Appendix；预印本无独立 supplementary material，直接说 Appendix。
+%   标题改为 "Computable Coalgebras"（去掉 "Any" 的全称后味道就对了——名词短语、与 §4.2/§4.3 同风格，只命名对象、不耀武扬威）。
+%   注意：之前一次插注记误删了本 \subsection 行与 sec:generality 标签，导致附录 \ref{sec:generality} 悬空，此处一并恢复。
+\subsection{Computable Coalgebras}\label{sec:generality}
+We want to understand how far the algorithm of Section~\ref{sec:bridge} extends beyond the $\lambda$-calculus. We observe that its driver \textsf{Tabled} does not depend on the $\lambda$-calculus: we pass the structure map to it as a parameter, and it uses only two operations on its input, calling the structure map and testing states for equality to key its table, while \textsf{WHNF} is the only component that reads a term. The algorithm therefore applies whenever we can supply these two operations. We require the structure map to be a \emph{partial computable} function that sends a state to one layer of data, an operation applied to finitely many successor states, and that may instead run forever, in which case we take its value to be the divergence $\bot$. We require the states to carry a \emph{decidable identity}, a computable test of when two are the same state. We call a coalgebra \emph{computable} when its structure map is partial computable and its states carry a decidable identity, and we take its \emph{solution} to assign each state the tree obtained by unfolding its layers, with a $\bot$ leaf wherever the structure map diverges. Weak-head reduction over terms is one such coalgebra, and its solution is the L\'evy--Longo tree. We conclude that the same algorithm applies to every computable coalgebra. We make this precise in Appendix~\ref{sec:tabling}, where we give the definitions, prove \textsf{Tabled} (tabling) sound, characterize when it terminates, and establish the rational-ceiling bound.
+
+% =====================================================================
+% §4.2 作者视角（reasoning 写足；正文只留读者需要看的英文实质）。
+%
+% 标题 "The λ-Calculus as a DSL for Graphs"（用户已定，用 "as a DSL for"；不提 Scott）。本节的反直觉点是
+% "λ 在它公认最不擅长的领域——图（环/共享/指针）——其实很擅长"，兑现 §1.1 立的靶。但【关键纠错】：这个反转
+% 是【作者视角的伎俩】，只能存在于标题与本注释里，【绝不写进正文】——读者自己知道 λ 看起来不擅长图，
+% "The pure λ-calculus looks like the worst possible language for graphs … Yet under the solver …" 这类
+% 开场白写出来就是废话。方法（用户原话）：用中文把 reasoning 写进注释、爱写多长写多长；英文 body 只承载读者
+% 必须看到的新实质。
+%
+% 去重——以下都已在别处讲过，§4.2 正文【一律不复述】：
+%   * §1.1 已逐字讲：纯归约造不出环 / 遍历环要 visited-set + reference equality / 要 letrec 命名环。
+%   * §1.3 / §4.1 已说"识别重复状态的是 solver 不是 term、数据 Scott 编码为 λ-term"。
+%   * §1.2 / §3 已把 ed 讲透（坍缩成 (m+1)(n+1)）。【假设读者已读懂 §3 的 ed】，§4.2 绝不重述它——连
+%     "shares suffix pairs / 坍缩成 (m+1)(n+1)" 都不再写（上一稿被作者指出仍在重复 ed，已删）。
+%
+% 【核心原则，作者明确】正文不可从【正文别处】抄内容（§1/§2/§3/§4.1 读者都读过），但【可以、且应当】把
+%   【附录】的内容总结进正文——因为要假设审稿人和读者【不会去读附录】。故 §4.2 的实例证据不是逐条罗列、也不
+%   是重述 ed，而是把 app:dsl 的内容做【高层总结】搬进正文：
+%   rational 片段 = 有限态/正则/有限格上最小不动点 的计算；跨整个片段，各领域【平时手写来管理一张图的簿记】
+%   正是 tabling on state identity 免费给出的同一个机制（DP 的 memo 表 / 博弈搜索的 transposition 表 /
+%   图可达与 points-to 的 visited set / unification 与递归类型的环检测相等），再一句指向 app:dsl。
+%   推论：开场不要复述 §4.1 的"tables on structural identity"（那是正文已有），只用一句"Since the solver
+%   folds a term on its structural identity"作前提，引出 §4.2 独有的新论点。
+%
+% 正文只留 §4.2 独有的两点：
+%   ① insight：方法把 λ-term reify 成一阶数据、以结构同一性为 tabling 键 ⇒ term 的结构【就是】solver 构造的
+%      那张图；算法怎么编码（哪些子问题重合）决定图的大小、从而时空成本——结构是一个杠杆，相等性是另一个杠杆。
+%   ② 编译器桥接：编译本身也是图→图的余代数方程，同一解释器求解之 ⇒ 自举 Python 编译器；其特点（content-
+%      addressed closures / 更粗相等性 / ~8x bootstrap）留 §4.3。结尾 "we take up next" 是有意的章节过渡
+%      preview（forward-ref 例外）；§4.3 落地后把它改成 \ref。
+%
+% 【段落首尾的衔接，作者明确】§4.2 是讲"图"的，但要与上一段（§4.1 的余代数）和下一段（§4.3）接续：
+%   * 段【首】先讲"graph = 被折叠后的余代数"（solver 把 unfolding 折到重复状态 ⇒ 无穷树变有限图），用来
+%     衔接上一段 §4.1 的余代数；由此 term 的结构【就是】那张图。
+%   * 段【尾】把 compilation 点成一个【graph transformation 问题】（源图→编译图），用来衔接下一段 §4.3。
+%   注意：不要像早先那样把这两个衔接句都堆在结尾；首尾各放一个。也不要用悬空的 "such equation"
+%   （"equation" 在本段首次出现，无先行词）——已改为段首明确建立"图=折叠的余代数"。
+\subsection{The \texorpdfstring{$\lambda$}{lambda}-Calculus as a DSL for Graphs}\label{sec:graphs}
+Solving a coalgebra returns a graph: the interpreter folds a term's unfolding onto its repeated states, so an infinite tree becomes a finite graph and the term's structure \emph{is} that graph. How an algorithm is encoded therefore fixes which subproblems coincide, and with them the size of the graph and the time and space it costs. Across the rational fragment, the finite-state, regular, and finite-lattice-fixpoint computations, the bookkeeping each domain ordinarily writes by hand to manage a graph is exactly what tabling on state identity supplies for free: the memo table of dynamic programming, the transposition table of game search, the visited set of graph reachability and points-to analysis, and the cycle-detecting equality of unification and recursive types are one mechanism, the recognition of a repeated state, and Appendix~\ref{app:dsl} works each as a pure term the interpreter runs. The structure of the term is one lever on this cost, and the equality it tables by is another. Compilation is then a graph transformation, mapping the source graph to a compiled one that the same interpreter solves into a bootstrap compiler to Python; the equality it tables by, and the design space of equalities and reductions it opens, we take up in Section~\ref{sec:design-space}.
+
+% =====================================================================
+% §4.3 作者视角（reasoning 写足；正文只留读者需要看的英文实质）。
+%
+% 兑现 §4.2 结尾的承诺：one tabling solver 之上有两个【旋钮】，调它们得到不同的 sharing/语义，而【不改 §2 的
+% soundness】。
+%   ① 相等性旋钮。【关键纠正（作者）】不要写成"结构同一性 vs 更粗的相等"——defun 之后【也是】结构同一性！
+%      解释器与编译器【都】按"某个一阶编码的结构同一性"折叠（§2 是 de Bruijn 项的 interning；编译器是
+%      defunctionalized 形式的 interning：hash of body + 按位置编号 captures）。所以重点【不是】是否结构同一，
+%      而是【结构同一性 of WHAT】——即【选哪个一阶编码】。这正是 §4.2"编码是杠杆"的延伸。
+%      谱系：de Bruijn 项的结构同一性=最细（区分最多）；defunctionalized 形式=更粗的编码（按 capture 深度不同但
+%      同形的 abstraction 合一，折叠更多）；【超出一切编码】之外才是 behavioral equality=最粗、【不可判定】=rational
+%      ceiling（app:ceiling 已证，且证了 de Bruijn 同一性只达子片段、有 gap）。【能折叠多深取决于编码】，故解释器与
+%      编译器都是谱系上的点、【都不是最优】（最优=behavioral、不可判定）；正文务必不暗示二者 optimal。
+%      【本节最重要的点】编译器编码更粗 ⇒ 折叠命中率更高（把解释器分开的 state 也折成一个），benchmark 正好证明
+%      （tab:defun 的 tabled-objects 列：编译形式少 ~5x 个对象），且【每个输入返回同一张图】（同解）；故 ~8x 更快、
+%      ~3.5x 更省内存。
+%   ② 归约旋钮：structure map 由 reduction function 呈现（sec:reductions）；换 reduction ⇒ 另一种 tree semantics。
+%      框架【能】处理别的 reduction（含 Böhm），我们只是【选择不在此展开 Böhm】；正文只泛说"换 reduction 固定另一种
+%      lazy tree semantics"，【不写成 limitation】。
+% 【删去 parameter/correction 句（本轮作者）】原有 "The encoding is meant as a parameter, not a correction: a
+%   coarser identity is intended to add sharing, not to change the answer." 已整句删除：'加 sharing' 与前面
+%   benchmark 重复；'not to change the answer' 是要留给读者从 standard defunctionalization 自推的语义保持点；
+%   'meant as/intended to' 又是软对冲。'不是 correction'（编译器不比解释器更"对"）由前面 "behavioral equality 是
+%   ceiling、de Bruijn identity 够不到" 已兜住，且 §2 本就是被证 sound 的基准，不会被读成有 bug。
+% 【对冲措辞改定（本轮作者）】不要再写 "we do not prove it here" / "expected to leave the tree semantics intact" /
+%   "tests confirm" 这类对冲。理由：defunctionalization 是标准、保语义的变换；过度对冲反而【暗示我们怀疑会出问题】，
+%   但我们并不怀疑，只是觉得不值得在这个 Discussion 例子里证。正文只说【用了标准的 defunctionalization】，语义是否
+%   保持【让读者自推】。仍不写成定理（不 claim 证明）。
+% 【关键（本轮作者）】"不断言 defun sound" ≠ "断言 defun 不 sound"。所以【不要】把它和 §2 的 "we prove" 并排对比——
+%   那种对比会让读者反推"编译器那条未证、可能不 sound"。§4.3 这里【不再复述】§2 的 soundness（它在 §2/app:faithful
+%   已正面陈述）；这里只平述编译器用标准 defunctionalization，不褒不贬。
+% 【"standard" 的落点（本轮 blind-read 后）】"standard" 已并入引入处 "The compiler takes the standard
+%   defunctionalized form …"；原句尾再补一句 "The compiler's coarser encoding is the standard defunctionalization."
+%   被 blind-read 判为接在 benchmark 后的【悬空 non-sequitur】，已删。段落收在 benchmark（~8x faster）。
+% 【标题（作者定）】"Alternative Operational Semantics"，与 §2 "A Tabled Operational Semantics" 平行：§2 是被证明的
+%   那一个，§4.3 讨论【替代】（更粗的 tabling / 换 reduction），多为未证、属 Discussion 性质。勿用 "Choosing"（像已
+%   定论的设计选择，过度断言）。
+% 原则：不复述 §2 interning / §4.2 graph（只 lean）；对 app:ceiling、app:compiler 只【高层总结】（审稿人不读附录），
+%   关键事实（~5x/~8x、coarser-decidable）写进正文。结尾 "a family ... over a single solver" 收束到 Conclusion。
+% =====================================================================
+\subsection{Alternative Operational Semantics}\label{sec:design-space}
+\textsf{Tabled} folds two states it can decide are the same, and the decidable identity it folds by is always the structural identity of some first-order encoding of the state; the choice is the encoding, structural identity \emph{of what}. The interpreter takes the de Bruijn term itself, the interning of Section~\ref{sec:bridge} and the finest such identity, decided by a pointer test. The compiler takes the standard defunctionalized form, naming each closure by a hash of its body over positional capture fields, so abstractions differing only in the depth at which they bind a capture share an encoding and fold together: the same structural identity, now of a coarser representation, still a constant-time test (Appendix~\ref{app:compiler}). Beyond every encoding lies behavioral equality, which folds states with equal behavior and attains the whole rational fragment but on $\lambda$-terms is $\beta$-equality and undecidable, the rational ceiling of Appendix~\ref{sec:tabling}, which also shows the de Bruijn identity falling short of it. How coarse a decidable identity reaches is thus set by how the computation is encoded as first-order data, and the compiler's encoding folds states the interpreter keeps apart: Appendix~\ref{app:compiler} measures the higher hit rate directly, about five times fewer interned objects on the self-compilation bootstrap, and the bootstrap then runs about eight times faster and in a fraction of the memory.
+
+The reduction function is the second choice. \textsf{Tabled} reads a tree semantics off whatever reduction presents the structure map (Appendix~\ref{sec:reductions}); weak-head reduction presents the L\'evy--Longo tree, and a different reduction fixes a different lazy tree semantics, the same \textsf{Tabled} computing it. The pure $\lambda$-calculus is thus not one language but a family, indexed by the equality it tables and the reduction it runs, over a single tabled evaluation.
+
+\section{Related Work}\label{sec:related}
+% =====================================================================
+
+\paragraph{Coalgebra, partition refinement, and rational fixpoints.}
+The coalgebraic method reads behavior as the unique map into a final coalgebra~\cite{rutten2000-universal-coalgebra}; the rational fixpoint characterizes exactly the finite cyclic graphs among all coalgebraic behaviors~\cite{adamek2006-iterative-algebras}. Partition refinement, in its classical form~\cite{hopcroft1971-minimizing, paige1987-partition} and in the generic coalgebraic tool CoPaR (Coalgebraic Partition Refiner)~\cite{copar,wissmann-modular-partition-refinement}, is \emph{given} a finite coalgebra and \emph{minimizes} it, quotienting states by the coarsest bisimulation. It does not solve an equation whose solution does not yet exist: it compares and collapses states of an already given system, whereas a coalgebraic equation names the system only implicitly through a structure map, and the solution must be constructed. The two tasks are orthogonal and could compose: partition refinement could further minimize a solution graph once one has been built.
+
+\paragraph{Iteration, Elgot monads, and infinitary rewriting.}
+Iteration in a complete Elgot monad~\cite{goncharov2016-complete-elgot-monads} and iterative algebras~\cite{adamek2006-iterative-algebras} solve guarded recursion abstractly, characterizing solutions categorically; the delay monad~\cite{capretta2005-general-recursion} makes divergence an explicit value. These accounts describe what a solution \emph{is} but do not give an algorithm computing a finite representation of it from a structure map. Similarly, infinitary rewriting~\cite{kennaway-klop-sleep-devries} and infinitary $\lambda$-trees~\cite{berarducci} study infinite normal forms as limits of finite approximation sequences. They inhabit the abstract denotation, possibly infinite, and do not produce a finite cyclic graph that a program can traverse.
+
+\paragraph{Domain-specific cycle detection.}
+Terminating computation over cyclic structures by detecting re-entrant states is long established in several domains independently. Tabling in logic programming~\cite{tamaki-sato,tabling-slg,vanemden-kowalski} completes unproductive cycles in the least fixpoint of a logic program's consequence operator instead of looping. Rational trees and cyclic unification~\cite{colmerauer1984-trees,courcelle1983-infinite-trees} handle first-order terms with back-edges. Equirecursive type theory terminates subtyping and equality checks by tracking visited type pairs~\cite{amadio1993-subtyping-recursive-types,brandt1998-coinductive-type-equality}. Binary decision diagrams~\cite{bryant1986-bdd} canonicalize Boolean functions by interning shared sub-graphs. Each of these hard-wires one domain's signature: Herbrand terms, first-order trees, types, or Boolean functions. They are not parametric in the functor; each is a separate discipline whose cycle detection is specific to the data it handles.
+
+\paragraph{Sharing as an added construct.}
+Graph reduction~\cite{wadsworth-graph} evaluates terms over possibly cyclic graphs, but a cycle is tied only where recursion is primitive, a $\mathtt{letrec}$ or a built-in fixpoint; a pure fixpoint combinator has its body copied at each $\beta$-step and unfolds into an unbounded spine. Cyclic $\lambda$-terms with explicit recursion~\cite{ariola1997-explicit-recursion} and call-by-need~\cite{ariola-felleisen} provide sharing as an added construct. A pure functional language cannot even observe sharing without an extension such as observable sharing~\cite{gill} or a circular-program idiom that threads a lazily tied knot through a data structure~\cite{bird}. Across all of these, an ordinary recursive function over a cyclic list, such as a $\mathtt{map}$, reduces to an unbounded spine rather than to a cycle. None leaves the calculus unextended: each adds a mechanism, pointer identity, $\mathtt{letrec}$, or an observable-sharing combinator, that the calculus does not natively have.
+
+% \paragraph{Surface neighbors.}
+% Higher-order model
+% checking~\cite{ong-hors,kobayashi} decides properties of trees generated by higher-order programs
+% via automata and games; it answers queries about infinite trees but does not construct a finite
+% representation of them. The e-graph engines egg~\cite{willsey2021-egg} and
+% egglog~\cite{zhang2023-egglog} intern and share sub-terms for equality saturation, merging nodes
+% that a set of rewrite rules proves equivalent; the shared-node structure resembles interning, but
+% the mechanism, rewrite-driven merging, and the goal, rewrite optimization, differ from tabling a
+% coalgebraic structure map.
+
+% =====================================================================
+\section{Conclusion}\label{sec:conclusion}
+% =====================================================================
+A $\lambda$-term is a coalgebraic equation: each sub-term is a state, and one step of reduction either exposes a layer of data or continues silently at a successor state. The meaning of the term is the tree the equation unfolds to, and tabling computes that tree. Cyclic data, automatic memoization, and the decision of an unproductive loop as $\bot$ are what solving the equation looks like: an ordinary $\mathtt{map}$ over the cyclic stream of zeros folds to the finite circle of ones, and a naive edit-distance recurrence runs in $O(mn)$, with nothing added to the calculus.
+
+The standard account pays twice, an added recursion construct to create a cycle and an impurity to traverse it; this one pays neither, because the recognition that folds a cycle is tabling's, not an operation a term performs. That single decision draws both boundaries of the construction. On tabling's side the recognition must be decidable, so it is structural identity of first-order terms, which falls short of behavioral equivalence and so of the full rational fragment: a rational solution whose states are nonetheless pairwise distinct, such as the $Y\,F\,\underline{0}$ of Appendix~\ref{sec:tabling}, does not fold. On the term's side the recognition is withheld, so a term observes no sharing in the graph it produces: it builds and traverses a finite cyclic graph yet cannot read it back into a representation with explicit sharing such as a $\mathtt{letrec}$. The folding tabling may perform and the sharing the term may not observe are one fact, the price of purity read from two sides.
+
+The construction is not specific to the $\lambda$-calculus but parametric in the signature of the exposed layer: the same tabling that interprets a term also compiles it, sending each sub-term to a node of a Python syntax tree (Section~\ref{sec:bridge}), and the compiler is itself a term the interpreter solves. One mechanism does the work throughout, tabling's decidable recognition of a recurring state, which makes the rational fixpoint computable wherever finitely many states are reachable, decides divergence as $\bot$, and folds a cycle into a finite graph.
+
+\fi % end \ifColambdaBody (the main matter, Sections 1-6)
+
+\ifColambdaAppendix
+\appendix
+
+% =====================================================================
+\section{Faithfulness of the Evaluator}\label{app:faithful}
+% =====================================================================
+% §2 专属：针对 LLT + tabling 的忠实性证明，自成一体，NOT 复用 coalgebra 泛化的附录
+% （泛化版本的证明已并入 sec:method 各小节内联——sec:order 收 domain/唯一性，sec:tabling 收 soundness/
+%   termination/ceiling，sec:reductions 收 presentation——正文对它们的引用改指这些小节）。
+% 结构：承重 recall（tabled evaluation 对 lfp 忠实，前人工作）+ 三条 LLT-specific 前提
+% （树成 domain、weak-head unfolding 单调、lem:finite 有限【且无环】⇒可判定同一性），再接 thm:unique。
+% 附录不提 intern；intern 只在正文脚注（引 lem:finite 作 intern 存在/会停的证据，说明是优化）。
+% 【无环为何必需（作者）】可判定结构相等靠"逐位置比较"（intern 是其自底向上实现），它只在【无环】时停机：
+%   有限节点数 != 有限位置数——有限【环】图节点有限但位置无限，比较/hash-cons 不停机。无环正是 state（可判定
+%   相等）与 solution（有限环图、行为相等不可判定，§4.3 的 ceiling）的分界。reachable term 无环成立：代换只
+%   产生拷贝、不产生指回祖先的 back-edge。故 lem:finite 同时陈述并证明"有限【且无环】"；正文提及 finite 处一并提无环。
+Tabled evaluation is faithful to a least-fixpoint semantics: from a root it follows a monotone map a layer at a time, reuses a state it has already tabled, and settles an unproductive cycle at $\bot$ rather than looping, and the graph it returns unfolds to the least fixpoint~\cite{vanemden-kowalski, tamaki-sato, tabling-slg}. We apply this to the weak-head reading by discharging its three hypotheses for our states, which are $\lambda$-terms.
+
+\begin{lemma}[The L\'evy--Longo trees form a domain]\label{lem:order-llt}
+  Let $D$ be the finite and infinite trees whose every node is a variable $\Varsh_i$, an abstraction
+  $\Lamsh$, or an application $\Appsh$ headed by a variable, or else a $\bot$ leaf. Order them by
+  $t \sqsubseteq u$ iff $u$ is obtained from $t$ by replacing $\bot$ leaves with subtrees. Then
+  $(D, \sqsubseteq)$ is a pointed $\omega$-complete partial order: the single $\bot$ leaf is least, and
+  every increasing chain has a least upper bound, computed level by level.
+\end{lemma}
+\begin{proof}
+  Read a tree as a partial labeling of positions, each carrying one of $\Varsh_i, \Lamsh, \Appsh$
+  with its children, or $\bot$ with none. The lone $\bot$ leaf is refined by every tree, so it is
+  least. For a chain, label each position by the constructor any member assigns it, and $\bot$ if all
+  do; refinement never relabels a constructor, so this is well defined, and it is the least upper
+  bound, fixed level by level by the first member that exposes each position.
+\end{proof}
+
+\begin{lemma}[The weak-head unfolding is monotone]\label{lem:mono-llt}
+  Let $\outm(t)$ expose the top constructor of $t$'s weak-head normal form over its immediate sub-terms, or $\bot$ when the silent head reduction from $t$ exposes none. Then $\outm$ is the least fixpoint of that silent step, reached from $\bot$, and the map $\Psi$ that reads one further layer off $\outm$, sending $g$ to $\bot$ where $\outm(t) = \bot$ and to $\sigma(g(t_1), \dots, g(t_k))$ where $\outm(t)$ exposes $\sigma(t_1, \dots, t_k)$, is monotone.
+\end{lemma}
+\begin{proof}
+  The silent step sends $t$ to its head reduct, or at a weak-head normal form exposes the constructor; iterating it from $\bot$ runs head reductions until the first exposed constructor, its least fixpoint, with $\outm(t) = \bot$ exactly when none is ever exposed. $\Psi$ fixes the root of $\Psi(g)(t)$ from $\outm(t)$ alone and passes $g$ only to the children, so $g \sqsubseteq h$ gives $\Psi(g) \sqsubseteq \Psi(h)$.
+\end{proof}
+
+\begin{lemma}[Finiteness and acyclicity]\label{lem:finite}
+  Every term reachable by weak-head reduction from a finite, acyclic term is again finite and acyclic, so structural identity on reachable terms is decidable.
+\end{lemma}
+\begin{proof}
+  Terms are finite and acyclic by construction, and the only term-former weak-head reduction applies is substitution, which replaces each of finitely many variable occurrences in a finite, acyclic term by a finite, acyclic term, producing fresh copies and never an edge back to an ancestor, and so returns a finite, acyclic term. Structural identity of two such terms is then decided by comparing them position by position, a comparison that terminates only because the terms are acyclic: finitely many nodes alone would not suffice, since a finite \emph{cyclic} graph has finitely many nodes yet infinitely many positions, on which the comparison, and the bottom-up interning that realizes it, would not halt. Acyclicity is what keeps a state on the decidable side; a finite cyclic graph is a solution, not a state.
+\end{proof}
+
+\noindent
+The three hypotheses hold: $D$ is a domain (Lemma~\ref{lem:order-llt}), the unfolding is monotone with $\outm$ its least fixpoint (Lemma~\ref{lem:mono-llt}), and the states are finite, acyclic first-order terms with a decidable structural identity (Lemma~\ref{lem:finite}). The recalled result therefore applies: tabling $\outm$ from a term $t$ computes the least fixpoint of weak-head reduction, the L\'evy--Longo tree of $t$. Lemma~\ref{lem:finite} is also what answers how a cycle is formed at all: a state is a finite, acyclic term, never an infinite object, so a recurring term is recognized by its decidable identity and folded into a back edge, and the finite cyclic graph the solver builds unfolds to the infinite tree. By Theorem~\ref{thm:unique} this least fixpoint is also the greatest, so it is the unique L\'evy--Longo tree, and the graph the evaluator builds unfolds to exactly it.
+
+% =====================================================================
+% 通用轨（§4.1 的形式化后盾），由原 \iffalse 的 "The Method" 搬来 live；与 §2 的 LLT 轨 app:faithful
+% 分节并列。结构：每个部分自洽——陈述紧跟其证明，不再把证明甩到本附录末尾的 app:order/out/unique/...
+% 平铺尾巴（原十个并列 subsection 把"构造叙事"和"证明"混在同一标题层，读者/TOC 分不清；故合并）。
+% app:* 的 \label 一律不改名，§2 的 thm:unique 等引用照常 resolve。改动遗产：通用唯一性定理叫
+% thm:unique-coalgebra（§2 的 LLT thm:unique 不动、是其实例）；halts 措辞（halts 只指算单点 out，
+% 整图产出说 returns a finite graph）。
+% =====================================================================
+\section{The General Construction: Computable Coalgebras}\label{sec:method}
+Section~\ref{sec:generality} states that the technique solves any computable coalgebra; this appendix develops that construction in general, in three independent parts presented general to specific, each stating and proving its own results in place. A \emph{coalgebra}~\cite{rutten2000-universal-coalgebra} is the object we solve, and its solution is what it means (Section~\ref{sec:coalgebras}). The \emph{approximation order} makes the solution well defined, as the unique fixpoint of a guarded functional (Section~\ref{sec:order}). \emph{Tabling} computes it (Section~\ref{sec:tabling}). None of the three mentions how the coalgebra arose; a \emph{reduction function} is one way to present a coalgebra, through the single least fixpoint of the paper, and the $\lambda$-calculus enters only there, as an instance (Section~\ref{sec:reductions}).
+
+\subsection{Coalgebras and Their Solutions}\label{sec:coalgebras}
+
+We first recall the coalgebraic account of solutions, then state the two commitments that make it ours: a partial computable structure map, and states with decidable identity.
+
+\subsubsection{The Coalgebraic Account, Recalled}
+
+% 作者：(B-强) 定稿——把确定性写进 computable coalgebra，使摘要/§sec:generality 的全称句字面成立。
+%   效应命名为 partiality（= deterministic effect，单值偏函数）：与 "partial computable" 天然成对（图灵机算的就是
+%   部分可计算函数，⊥ = 无定义、定义域半可判定，正对应 solver 的 semi-decision）。out 是 partial computable
+%   X⇀FX、total 化到 X→FX∪{⊥}。正文(317/524)仍写 "deterministic effect"（避免前向引用 partiality），故此处写
+%   "partiality, the deterministic effect" 把两名钉一起。一般 monad(Elgot)推广降为 future-work 脚注。
+\begin{definition}[Signature and effect]\label{def:signature}
+  A \emph{signature} $F$ is a set of operations, each with a finite arity; $F X$ is the set of layers $\sigma(x_1,\dots,x_k)$ with $\sigma$ an operation of arity $k$ and $x_i \in X$. The \emph{effect} is \emph{partiality}, the deterministic effect whose computation over a set $A$ is a value in $A$ or the divergent $\bot$; we write $M A = A \cup \{\bot\}$.\footnote{A general monadic effect, whose computations may also be non-deterministic, probabilistic, or stateful, fits the same coalgebraic frame through a complete Elgot monad~\cite{adamek2006-iterative-algebras, goncharov2016-complete-elgot-monads}; computing a finite representation of the solution there is a generalization we leave to future work.}
+\end{definition}
+
+\begin{definition}[Coalgebra]\label{def:coalgebra}
+  A \emph{coalgebra} is a set $X$ of \emph{states} together with a map
+  \[
+    \outm \colon X \longrightarrow M(F X).
+  \]
+  At each state, $\outm$ either exposes one layer of data, an operation applied to successor states, or is the divergent computation $\bot$.
+\end{definition}
+
+A coalgebra poses an equation. Each state names a value: one layer of data over the values of its successor states, which are again states. To \emph{solve} the equation is to compute, for each state, the tree this naming unfolds to: expose a layer, then recursively the trees of the successors, with a $\bot$ leaf where $\outm$ diverges. We write $\behav(x)$ for the tree at state $x$ and call $\behav$ the \emph{solution} of the coalgebra.
+
+\subsubsection{Our Setting: Computable Coalgebras}
+
+\begin{definition}[Semantics as solution]\label{def:semantics}
+  The denotational semantics defined by a coalgebra \emph{is} its solution: state $x$ denotes
+  $\behav(x)$.
+\end{definition}
+
+\noindent Two commitments make the solution computable: a partial computable structure map, and states with decidable equality. Together they make a \emph{computable coalgebra}.
+
+\begin{definition}[Computable coalgebra]\label{def:computable-coalgebra}
+  A coalgebra is \emph{computable} when its structure map is a partial computable function $\outm \colon X \rightharpoonup F X$, total to $\outm \colon X \to F X \cup \{\bot\}$ by sending an undefined state to $\bot$, and its states, with the operations of its signature, have decidable equality.
+\end{definition}
+
+\noindent A partial function is single-valued, so $\outm(x)$ exposes one operation at the root and a state names a single tree, which the uniqueness of the solution requires. Its undefinedness, the divergence $\bot$, is only semidecidable, the non-termination the solver detects rather than a value it reads off; decidable equality lets the solver recognize a state it has already visited and fold it into a back edge.
+
+\subsection{The Approximation Order}\label{sec:order}
+
+In Section~\ref{sec:coalgebras} a coalgebra's solution $\behav$ was the tree its states unfold to. For a cyclic coalgebra that unfolding is circular: a state can reappear among its own successors, as in the stream $Y\,(\mathtt{cons}\,0)$, so ``expose a layer, then the trees of the successors'' need not bottom out, and it is not clear it names a tree at all, let alone a unique one. This subsection settles that: a solution is a possibly infinite tree, so we fix the space of trees, order it from $\bot$ so the unfolding is built up by approximation, recast the unfolding as an operator whose fixpoints are the solutions, and prove the fixpoint exists, is unique, and forces a non-terminating unfolding to $\bot$ (Theorem~\ref{thm:unique-coalgebra}).
+
+\begin{definition}[Trees]\label{def:trees}
+  $D$ is the set of finite and infinite trees in which every node is either an operation of
+  $F$ with one subtree per argument, or a $\bot$ leaf, read ``nothing exposed here, yet or ever''.
+\end{definition}
+
+\begin{definition}[Approximation order]\label{def:order}
+  For $t, u \in D$, $t \sqsubseteq u$ iff $u$ is obtained from $t$ by replacing $\bot$ leaves with subtrees. The single $\bot$ leaf is the least tree.
+\end{definition}
+
+\begin{proposition}[The tree space is a domain]\label{prop:order}
+  $(D, \sqsubseteq)$ is a pointed $\omega$-complete partial order: every increasing chain has a least upper bound, computed level by level.
+\end{proposition}
+\begin{proof}
+  Present a tree $t \in D$ as a partial labeling: a prefix-closed set of positions, each labeled by an operation of $F$ or by $\bot$, a node labeled by an operation of arity $k$ having exactly $k$ children and a $\bot$ node having none.
+
+  \emph{Least element.} The single $\bot$ leaf has the one position $\varepsilon$, labeled $\bot$, and every tree refines it, so it is least under Definition~\ref{def:order}.
+
+  \emph{Least upper bounds.} Let $t_0 \sqsubseteq t_1 \sqsubseteq \cdots$ be a chain. Define $t$ on the union of their positions, labeling a position with the operation any $t_i$ assigns it, and with $\bot$ if every $t_i$ that contains the position assigns $\bot$. The operation label is well defined: refinement never relabels an operation, only replaces $\bot$, so two members of the chain agree on every position they both label with operations. The position set of $t$ is prefix-closed as a union of prefix-closed sets, and arity-respecting because each label comes with its children from some $t_i$. Each $t_i \sqsubseteq t$ by construction, and any upper bound $u$ refines every $t_i$, hence carries every operation label of $t$, so $t \sqsubseteq u$. Thus $t$ is the least upper bound, and it is computed level by level: the label of a position in $t$ is determined by any member of the chain that already exposes it.
+\end{proof}
+
+The order exists for one reason. $\bot$ is the value of ``nothing exposed'', the starting point every iteration ascends from; reusing any exposed value as the starting point would make a state that has not yet been computed indistinguishable from one that computed that value.
+
+\begin{definition}[Unfolding functional]\label{def:unfolding}
+  The \emph{unfolding functional} $\Psi$ takes a candidate solution $g \colon X \to D$ to the candidate that reads one more layer off the coalgebra:
+  \[
+    \Psi(g)(x) =
+    \begin{cases}
+      \bot & \outm(x) = \bot,\\
+      \sigma\big(g(x_1), \dots, g(x_k)\big) & \outm(x) \text{ exposes } \sigma(x_1, \dots, x_k).
+    \end{cases}
+  \]
+  A solution of the coalgebra is exactly a fixpoint of $\Psi$.
+\end{definition}
+
+% 作者：通用 Ψ 单调性引理。这正是「本文该自己证的」那类前提引理（与 app:faithful 的实例 lem:mono-llt 对应，
+%   但那是 weak-head 专属）；原唯一性证明里「Ψ is monotone」是裸断言、借了实例引理，referee 的 [X-ordering]
+%   挑的就是这个。补成通用引理后，唯一性证明引用它，递增序列 Ψ^k(λx.⊥) 的单调性才在通用层面自洽。
+\begin{lemma}[The unfolding is monotone]\label{lem:mono-coalgebra}
+  $\Psi$ is monotone in the approximation order: $g \sqsubseteq h$ implies $\Psi(g) \sqsubseteq \Psi(h)$.
+\end{lemma}
+\begin{proof}
+  Fix $x$. Where $\outm(x) = \bot$, both $\Psi(g)(x)$ and $\Psi(h)(x)$ are $\bot$. Where $\outm(x)$ exposes $\sigma(x_1, \dots, x_k)$, the two share that root and $\Psi$ passes its argument only to the children, so $g \sqsubseteq h$ gives $g(x_i) \sqsubseteq h(x_i)$ for each $i$ and hence $\Psi(g)(x) \sqsubseteq \Psi(h)(x)$.
+\end{proof}
+
+\begin{theorem}[The solution is unique]\label{thm:unique-coalgebra}
+  $\Psi$ has exactly one fixpoint $\behav$, and it is simultaneously the order-theoretic least fixpoint $\bigsqcup_k \Psi^k(\lambda x.\bot)$ and the greatest, coinductive one.
+\end{theorem}
+
+\noindent The reason is guardedness: $\Psi$ commits to the root of every tree before consulting its argument, so two candidate solutions can disagree only ever deeper, and under the metric in which the distance between two trees halves with the depth of their first disagreement, $\Psi$
+is a contraction, forcing its fixpoints equal. Consequently induction and coinduction coincide here, and \emph{any}
+procedure that reaches a fixpoint reaches the solution, which is what licenses an interpreter and a compiler with different evaluation orders.
+
+% 作者：度量证明机器（def:metric/lem:metric/lem:guarded）此处自洽地紧跟 thm:unique-coalgebra；
+% 此证明也证 §2 的 LLT 实例 thm:unique（见证明标题），§2 对它的引用已改指本小节 sec:order，故唯一性证明须留在此。
+\begin{definition}[Tree metric]\label{def:metric}
+  For $t, u \in D$ let $\mathrm{d}(t, u) = 0$ if $t = u$ and otherwise $\mathrm{d}(t, u) = 2^{-\ell}$, where $\ell$ is the least depth at which $t$ and $u$ differ. Lift it to candidate solutions by $\mathrm{d}(g, h) = \sup_x \mathrm{d}(g(x), h(x))$.
+\end{definition}
+
+\begin{lemma}[Completeness]\label{lem:metric}
+  $(D, \mathrm{d})$ and the candidate space $(X \to D, \mathrm{d})$ are complete metric spaces, and the limit of an increasing chain that converges in $\mathrm{d}$ is its least upper bound.
+\end{lemma}
+\begin{proof}
+  A Cauchy sequence of trees is eventually constant at every fixed depth, so the levelwise limit exists in $D$ and the sequence converges to it. The candidate space inherits this: a sequence Cauchy in the supremum metric is uniformly Cauchy in $x$, so it is pointwise Cauchy with a modulus independent of $x$; its pointwise limit $g$ therefore satisfies $\sup_x \mathrm{d}(g_n(x), g(x)) \to 0$ (let $m \to \infty$ in the uniform Cauchy bound), so $g_n \to g$ in $\mathrm{d}$ and the space is complete. For an increasing chain, the levelwise limit and the levelwise least upper bound of Proposition~\ref{prop:order} are the same tree.
+\end{proof}
+
+\begin{lemma}[Guardedness]\label{lem:guarded}
+  $\mathrm{d}(\Psi(g), \Psi(h)) \le \tfrac{1}{2}\,\mathrm{d}(g, h)$.
+\end{lemma}
+\begin{proof}
+  Fix $x$. The root of $\Psi(g)(x)$ is determined by $\outm(x)$ alone: $\bot$, or the exposed operation. So $\Psi(g)(x)$ and $\Psi(h)(x)$ share their root, and they can differ only inside some child, where the difference is one of $g(x_i)$ against $h(x_i)$, one level deeper. Hence the least depth of difference grows by one, halving the distance.
+\end{proof}
+
+\begin{proof}[Proof of Theorem~\ref{thm:unique-coalgebra}, hence of its weak-head instance Theorem~\ref{thm:unique}]
+  By Lemma~\ref{lem:guarded}, $\Psi$ is a contraction on the complete space of Lemma~\ref{lem:metric}, so by Banach's fixed-point theorem \cite{banach1922-operations} it has exactly one fixpoint $\behav$, and every iteration sequence converges to it. The particular sequence $\Psi^k(\lambda x.\bot)$ is increasing, since $\lambda x.\bot$ is least and $\Psi$ is monotone (Lemma~\ref{lem:mono-coalgebra}), and converges to $\behav$ in $\mathrm{d}$; by Lemma~\ref{lem:metric} its least upper bound is that limit, so the order-theoretic least fixpoint equals $\behav$. The coinductive unfolding, by its defining property of reading layers off $\outm$, is a fixpoint of $\Psi$, hence also $\behav$.
+\end{proof}
+
+\begin{remark}[Algebraic compactness]\label{rem:compact}
+  Over discrete sets the least and greatest fixpoints of a signature differ (finite lists versus finite-or-infinite lists). Completing with $\bot$ and ordering by approximation is exactly what collapses them; Theorem~\ref{thm:unique-coalgebra} is the operational face of algebraic compactness \cite{smyth1982-recursive-domain-equations, freyd1991-algebraically-complete-categories}.
+\end{remark}
+
+\begin{remark}[Where a least fixpoint is essential]\label{rem:leastessential}
+  Uniqueness holds for the unfolding, after $\outm$ has committed a root. Producing $\outm$
+  itself from a reduction function is unguarded, and there least genuinely differs from greatest; that single least fixpoint lives in Section~\ref{sec:reductions}.
+\end{remark}
+
+\subsection{Tabling}\label{sec:tabling}
+
+The solver computes $\behav$ at a root state by tabling $\outm$.
+
+\begin{definition}[The solver]\label{def:solver}
+  The solver keeps a table from states to graph nodes, keyed by the decidable equality of Definition~\ref{def:computable-coalgebra}. At a state $x$ it computes $\outm(x)$;
+  if $\outm(x) = \bot$ the node is a $\bot$ leaf, and otherwise the node carries the exposed operation with one edge per successor, where a successor already tabled \emph{reuses} its node, and a reuse of a state still being processed is a \emph{back edge}, closing a cycle.
+  The output is the table: a graph with one node per distinct reachable state.
+\end{definition}
+
+The solver consults only $\outm$ and the identity of states. It does not ask where the coalgebra came from, and nothing in it is specific to any language.
+
+% 作者：与 app:faithful 对齐——soundness/termination 不在通用层独立再证（别人证过的 tabling 无新意），
+%   改为「前提一立即 recall tabling 文献」。前提即本文自证的引理：prop:order(域)、lem:mono-coalgebra(单调)、
+%   prop:out(out 是 lfp)、thm:unique-coalgebra(唯一)、def:computable(可判定同一性)。原 lem:table 与两条自证
+%   已删。Algorithm 1 即这套标准 tabled evaluation、算 def:solver 那张表，故引文献一并覆盖实现的 faithfulness/停机。
+\begin{theorem}[Soundness]\label{thm:correctness}
+  The graph the solver builds at root $x_0$ unfolds to $\behav(x_0)$.
+\end{theorem}
+
+\begin{definition}[Rational]\label{def:rational}
+  A tree is \emph{rational} if it has finitely many distinct subtrees; equivalently, it is the unfolding of a finite graph \cite{courcelle1983-infinite-trees}.
+\end{definition}
+
+\begin{theorem}[Termination]\label{thm:termination}
+  When the silent run from each reachable state terminates, exposing a layer or returning to a visited state, the solver returns a finite graph at $x_0$ iff finitely many states are reachable from $x_0$, and that graph, possibly cyclic, unfolds to the rational solution $\behav(x_0)$.
+\end{theorem}
+
+\noindent Both are the faithfulness and termination of tabled evaluation, recalled once the construction supplies what it needs: $D$ is a domain (Proposition~\ref{prop:order}), the unfolding $\Psi$ is monotone (Lemma~\ref{lem:mono-coalgebra}) with $\outm$ its least fixpoint (Proposition~\ref{prop:out}), and the states carry a decidable identity (Definition~\ref{def:computable-coalgebra}). Tabled evaluation then follows the monotone unfolding a layer at a time from a root, reuses a state it has already tabled, and settles an unproductive cycle at $\bot$; the finite graph it returns unfolds to the least fixpoint, and it terminates exactly when finitely many states are reachable~\cite{vanemden-kowalski, tamaki-sato, tabling-slg}. That least fixpoint is the solution $\behav(x_0)$, since the fixpoint is unique (Theorem~\ref{thm:unique-coalgebra}). The implementation, Algorithm~\ref{alg:whnf}, is this tabled evaluation, computing the table the single sweep of Definition~\ref{def:solver} specifies.
+
+\begin{theorem}[The Rational Ceiling and the Identity Gap]\label{thm:ceiling}
+  Fix the reduction function, and with it the solution it defines; a procedure is
+  \emph{solution-preserving} when it returns that same solution as a finite graph. The rational solutions are the ceiling: a solution-preserving procedure can return a finite graph only when the solution is rational. The solver, folding states on structural identity, returns a finite graph on a strict sub-fragment of the rational ones, those with finitely many reachable states (Theorem~\ref{thm:termination}); closing the residual gap to the whole rational fragment requires folding behaviourally equal states, the coarsest solution-preserving identity, which is undecidable on $\lambda$-terms.
+\end{theorem}
+\begin{proof}
+  \emph{A solution has a finite representation iff it is rational.} The unfolding of a finite graph has at most one distinct subtree per state, hence finitely many, so it is rational.
+  Conversely a rational tree is the unfolding of the finite graph whose states are its distinct subtrees, each carrying its root operation with an edge to each immediate subtree; this is the standard correspondence for regular trees \cite{courcelle1983-infinite-trees}.
+
+  \emph{The ceiling.} A finite generator such as the input term names the solution but does not return it as a graph, so it is not solution-preserving. By the first part a finite graph for the solution exists only when the solution is rational, so a solution-preserving procedure cannot return one on an input whose solution is not rational: the rational fragment bounds them all. The bound is at the fixed solution: to return a finite graph on a non-rational input one must return a rational tree, hence not the non-rational solution fixed here; such a procedure computes a coarser semantics, a different reduction's solution, not this one. The solver returns a finite graph exactly on inputs with finitely many reachable states (Theorem~\ref{thm:termination}), all of whose solutions are rational, and that output is the finite graph (Theorem~\ref{thm:correctness}).
+
+  \emph{The gap.} Within the rational fragment a gap remains under structural state identity, witnessed in the $\lambda$-instance by $Y\,F\,\underline{0}$ with $F = \lambda s.\lambda n.\,\mathtt{cons}\,0\,(s\,(\mathtt{succ}\,n))$, whose states $Y\,F\,\underline{k}$ for $k = 0, 1, 2, \dots$ are pairwise distinct yet all unfold to the one rational stream of zeros, so structural folding never closes though the solution is rational and the solver diverges; the solver, folding on structural identity, returns a finite graph on the rational inputs outside that gap. The coarsest solution-preserving identity folds states with equal subtrees, whose classes are the distinct subtrees of the solution, finite exactly when the solution is rational; that identity therefore attains the whole rational fragment, but it is in general undecidable (on $\lambda$-terms it is behavioral equality of states), so the solver's decidable structural identity attains only a sub-fragment. We do not claim the rational fragment is unattainable by every decidable identity, only that the structural one the solver uses falls short of it.
+\end{proof}
+
+\noindent Rationality is undecidable, so the inputs on which the solver returns cannot be pre-selected. The solver is a sound semi-decision procedure: it returns the finite graph on the inputs with finitely many reachable states and diverges on the rest, and outside the rational fragment no solution-preserving procedure returns a finite graph at all, since the graph it would return does not exist.
+
+\subsection{Reduction Functions Present Coalgebras}\label{sec:reductions}
+
+Everything so far assumed $\outm$ given. The coalgebras of interest are presented differently:
+by a \emph{rule} that at each state either exposes a layer or takes an internal step, and only finitely many internal steps separate a state from its next layer, if one comes at all.
+
+\begin{definition}[Reduction function]\label{def:reduction}
+  A \emph{reduction function} is a map
+  \[
+    \stepm \colon X \longrightarrow M\big(F X + X\big):
+  \]
+  at each state, one $M$-step that either exposes a layer of data (left summand) or continues silently at a successor state (right summand). The iteration the next definition runs is well defined because, on the partiality monad, each $M A = A \cup \{\bot\}$ is a flat pointed $\omega$-complete partial order with continuous composition.
+\end{definition}
+
+\begin{definition}[The structure map]\label{def:out}
+  The reduction function $\stepm$ \emph{presents} the coalgebra $\outm = \iter{\stepm}$, the least fixpoint of
+  \[
+    \Phi(g)(x) = \big[\,\text{expose},\; g\,\big]\big(\stepm(x)\big),
+  \]
+  where the case split passes an exposed layer through unchanged and applies $g$ to a silent successor. The fixpoint runs silent steps until the first exposed layer: $\outm(x)$ is that layer, and where the silent process from $x$ never exposes one, $\outm(x) = \bot$.
+\end{definition}
+
+\begin{proposition}[The presentation is well defined]\label{prop:out}
+  $\Phi$ is monotone and $\omega$-continuous, so its least fixpoint
+  $\outm = \bigsqcup_k \Phi^k(\lambda x.\bot)$ exists, and $\outm(x) = \bot$ exactly when the silent process from $x$ exposes no layer.
+\end{proposition}
+\begin{proof}
+  \emph{Monotone and continuous.} $\Phi(g)(x)$ post-composes the fixed computation $\stepm(x)$ with the case split $[\text{expose}, g]$, which depends on $g$ only in the silent branch. Composition in $M$ is continuous and the case split preserves it, so $\Phi$ is monotone and $\omega$-continuous in the pointwise order on $X \to M(F X)$, whose structure is Proposition~\ref{prop:order}'s argument applied to $M(F X)$. By Kleene, $\outm = \bigsqcup_k \Phi^k(\lambda x.\bot)$ exists and is the least fixpoint of $\Phi$.
+
+  \emph{Characterization.} We show, for the partiality monad and by induction on $k$: $\Phi^k(\lambda x.\bot)(x) \neq \bot$ iff the silent process from $x$ exposes a layer within fewer than $k$ steps, and then $\Phi^k(\lambda x.\bot)(x)$ is that layer.
+
+  For $k = 0$ both sides are false: $\Phi^0(\lambda x.\bot)(x) = \bot$, and no layer is exposed within fewer than zero steps.
+
+  For $k + 1$, unfold one step: $\Phi^{k+1}(\lambda x.\bot)(x) = [\text{expose}, \Phi^k(\lambda x.\bot)](\stepm(x))$. If $\stepm(x)$ exposes a layer, the value is that layer, which is non-$\bot$, and the layer is exposed within zero steps. If $\stepm(x)$ continues silently at $x'$, the value is $\Phi^k(\lambda x.\bot)(x')$, which by the induction hypothesis is non-$\bot$ iff $x'$ exposes within fewer than $k$ steps, that is, iff $x$ exposes within fewer than $k + 1$ steps, and is then that layer.
+
+  Taking the least upper bound over $k$: $\outm(x) \neq \bot$ iff the silent process from $x$ exposes a layer within some finite number of steps, and $\outm(x)$ is then that layer; $\outm(x) = \bot$ exactly when no layer is ever exposed.
+\end{proof}
+
+\noindent This is the one least fixpoint of the paper, and the one place least differs from greatest: a silent loop exposes nothing, so its value is forced to $\bot$. The solver computes $\outm(x)$
+by running the silent steps, keeping the set of states the run has visited and, by their decidable equality, stopping at a revisit. Because the deterministic silent step is a function, a revisited state replays the same run forever and exposes no layer, so returning $\bot$ at the revisit is exactly the least fixpoint, decided in finite time. Everything above now applies to
+$(X, \outm)$ unchanged. Conversely no generality was lost by developing the theory for coalgebras: a coalgebra is the degenerate reduction function with no silent steps, so the two formats present the same objects.
+
+Two independent finiteness conditions now govern the solver: the silent run from each visited state must reach a layer or a revisit (this section), and the reachable states must be finite
+(Theorem~\ref{thm:termination}); either can fail without the other.
+
+% 作者视角（选 weak-head 的理由；勿入正文，正文 "different reduction → different tree semantics" 已够）：
+% WHNF/LLT 可看成对 Böhm/HNF 的“余代数驯化”，改造只一步——把 λ 从【沉默步】提升为【暴露构造子/guard】。
+% HNF 里 λ 沉默（钻进 λ），故能在 λ 下无限静默而不产出：λx.Ω↦⊥、λx.t（无限 λ-脊）状态无穷多、solver 发散。
+% 提升后每个 λ 都是 guard、必产出一层，只剩应用脊真发散（Ω）给 ⊥——这恰好是 weak-head。后果：
+% (i) guarded/reduction-presented；(ii) 更 defined，BT⊑LLT（λx.Ω：⊥↦Lam(⊥)）；(iii) λx.t 从“无穷态发散”
+% 救成“有限自环图”，正是本节要的 rational graph。在“λ 当构造子”的 signature 下，reduction-presented 的 out
+% 唯一就是 LLT；要 Böhm 须让 λ 沉默=另一个 signature，且对无限 λ 退步。史：LLT=lazy λ-calc 对 Böhm 的细化。
+For instance, one step of weak-head reduction in the pure $\lambda$-calculus is such a reduction function: a variable or an abstraction exposes a layer, and an application either contracts its head redex, the abstraction at the head of its function spine applied to the next argument, as a silent step, or exposes a layer when that head is a variable. Its solution is the L\'evy--Longo tree~\cite{longo1983-set-theoretical-models} of the term, the standard tree semantics of weak-head reduction; a different reduction function fixes a different tree semantics, and under Definition~\ref{def:semantics} each \emph{is} the meaning its reduction defines. Here a bare coalgebra has only a solution, no prior meaning to preserve, but a programming language carries a standard denotation of its terms; when that denotation is the tree the chosen reduction unfolds to, as the L\'evy--Longo tree is for weak-head reduction, the solution-preserving guarantee of Theorem~\ref{thm:ceiling} is exactly that this denotational semantics is unchanged. The instance is developed in Section~\ref{sec:bridge}.
+
+% =====================================================================
+% App（编译器）：从原 parked Implementation/Evaluation 提炼——编译器机制(defunctionalization) + content-addressed
+%   closures（更粗但可判定的相等）+ 自举 benchmark(tab:defun) + read-back 局限 + 编译输出例子。§4.3
+%   (sec:design-space) 高层总结本附录（审稿人不读附录，故 §4.3 正文已带关键事实：更粗相等⇒更高命中率、~8x）。
+%   tab:defun 由 generated/defun-benchmark 渲染、编译输出由 generated/compiler-examples 渲染（均生成、非手写）。
+\section{The Compiler}\label{app:compiler}
+% =====================================================================
+The compiler is a second coalgebraic equation. It sends each sub-term of a quoted source program to a node of a Python abstract syntax tree over that sub-term's own sub-terms, and its solution is the compiled program; the compiler is itself a pure $\lambda$-term, which the interpreter solves on the quoted source, the source program represented as a Scott-encoded datum, so program analysis is expressed as evaluation. The compilation strategy is defunctionalization, the replacement of each higher-order value by a named first-order data constructor, applied uniformly to every source sub-term: an application compiles to a \texttt{Thunk}, a suspended redex carrying its callee and argument; an abstraction compiles to an interned dataclass whose fields are the free variables it captures and whose call method, run on an argument, performs the $\beta$-reduction by evaluating the compiled body; a variable compiles to the corresponding argument or capture field.
+
+\paragraph{The runtime and content-addressed closures}
+The runtime is minimal: a \texttt{Thunk} carrier and an interning operator. The weak-head normal form of a \texttt{Thunk} is computed by the same memoized least-fixpoint mechanism the interpreter uses for silent reduction, so \texttt{Thunk} interning mirrors term interning: a recurring redex is one interned \texttt{Thunk}, reduced once, and the compiled program inherits the interpreter's cyclic-graph folding and its decision of non-productive loops as $\bot$. Closure classes are content-addressable: each class is named by a hash of its compiled body, with its capture fields numbered by position rather than by binding depth, so two source abstractions whose bodies have the same shape but capture variables at different depths compile to one class. This is the coarser, still decidable, identity of Section~\ref{sec:design-space}: it folds states the interpreter's per-node interning keeps apart.
+
+\paragraph{The self-compilation bootstrap}
+The compiler's first benchmark is the construction applied to itself. The compiler is a pure $\lambda$-term; the interpreter solves it on its own quoted source by the same tabling; the output is a Python program. That a pure $\lambda$-term transforms one graph, the source term, into another, the compiled abstract syntax tree, without an added recursion construct and without observing pointer identity, is the evidence that graph transformation lives inside the calculus. Table~\ref{tab:defun} reports this bootstrap together with lighter terms, each run interpreted against compiled. The compiled form is roughly four to fifteen times faster on the light terms and about eight times faster on the bootstrap, with lower peak memory on the bootstrap by a factor of about three and a half.
+
+\begin{table*}
+  \caption{Interpreted versus compiled execution. Each row runs one application interpreted (interned
+    term nodes) against compiled (interned \texttt{Thunk}s and closures). \emph{Speedup}, \emph{memory
+  ratio}, and \emph{tabled ratio} compare interpreted to compiled; a ratio above one means the compiled form wins. Time and peak memory are a single measured snapshot, and the compiled column runs the program already compiled, so compilation time is excluded. The last row is the compiler compiling its own source.}
+  \label{tab:defun}
+  \centering\footnotesize
+  \setlength{\tabcolsep}{4pt}
+  \resizebox{\textwidth}{!}{\input{generated/defun-benchmark}}
+\end{table*}
+
+The tabled-object columns count the interned objects each form materializes, and the compiled form materializes fewer, between about one and a half and nearly nine times fewer, about five times fewer on the bootstrap, the higher hit rate of the coarser identity. In the interpreted program every sub-term is a distinct interned node, so two abstractions whose bodies have the same shape but bind their captures at different de Bruijn depths are distinct nodes. In the compiled program each abstraction is an instance of a class named by the hash of its body over positional capture fields, so those two abstractions share one class, and their instances coincide whenever they also close over the same values. The compiled representation collapses these structurally equivalent abstractions to one object, which the interpreter's per-node interning does not, and \texttt{Thunk} interning compounds the effect, since a \texttt{Thunk} is keyed by the identity of its callee and argument and those have already coarsened. The compiled run produces the same finite graph as the interpreted run on every input tested, asserted by the accompanying test.
+
+\paragraph{What the calculus cannot read back}
+The bootstrap shows that producing and transforming a cyclic graph is internal to the calculus. The complementary limit is reading explicit sharing back out of one. The solver folds a recurrence into a back edge by recognizing, on the solver's side, that a state has been seen before, but a term cannot make that recognition: detecting that two sub-terms are the same node is a pointer-identity test, the very impurity the calculus forbids. So a pure term can hold and traverse a finite cyclic graph yet cannot serialize it into a representation with explicit sharing, a $\mathtt{letrec}$ or a list of named nodes, because it cannot tell a shared node from two equal copies. The compiler escapes this limit only because it consumes the quoted source, a finite tree it reads structurally, never the pointer structure of a graph.
+
+\paragraph{Compiled output for canonical terms}\label{app:compiler-examples}
+The listings below are the compiler's verbatim output for a few canonical terms, machine-generated and unedited; like Table~\ref{tab:defun} above, they can be reproduced from\anon[ the supplementary material]{the accompanying code~\cite{colambda}}. An application compiles to a \texttt{Thunk}, an abstraction to an interned class whose fields are its captures and whose call method is the compiled body, and a variable to an argument or a capture field. Each class is named by a hash of its body over positional capture fields, so a term reused at different binding depths produces one class; the constant combinator's inner class and the zero-test's identity, for instance, are shared by hash.
+
+\input{generated/compiler-examples}
+
+\section{Graph Computations as Pure Terms}\label{app:dsl}
+Each example below is a pure $\lambda$-term that reaches finitely many states, each by a terminating reduction, so the interpreter renders it as a finite graph; each is reproduced as a test\anon[~(supplementary material)]{~\cite{colambda}}. The Booleans are Church, $\mathtt{T} = \lambda a.\lambda b.\,a$ and $\mathtt{F} = \lambda a.\lambda b.\,b$, with $\mathtt{or} = \lambda p.\lambda q.\,p\,\mathtt{T}\,q$ and $\mathtt{and} = \lambda p.\lambda q.\,p\,q\,\mathtt{F}$, and $\mathtt{cons}$ and $Y$ are as in Section~\ref{sec:bridge}. Each example is confined to a tractable core: regular lexing but not general context-free parsing, rational-tree unification but not a general most-general unifier, finite-state model checking but not infinite-state.
+
+\paragraph{Mapping a cyclic list}
+The ordinary $\mathtt{map}$, with nothing cycle-aware in it,
+\[
+  \mathtt{map}\,f = Y\,\big(\lambda\mathit{self}.\,\lambda\mathit{lst}.\;
+  \mathit{lst}\,(\lambda h.\lambda t.\,\mathtt{cons}\,(f\,h)\,(\mathit{self}\,t))\;\mathtt{nil}\big),
+\]
+applied to $r = Y\,(\mathtt{cons}\,0)$ folds to a finite circular list, one cell holding $f\,0$ whose tail points to itself; on a finite list it is the textbook map.
+
+\paragraph{Dynamic programming}
+A perfect binary tree of depth $n$ whose nodes share both children is a graph of $n+1$ states that unfolds to $2^{n}$ leaves:
+\[
+  \mathtt{node} = \lambda l.\lambda r.\lambda m.\lambda f.\,m\,l\,r, \qquad
+  \mathtt{leaf} = \lambda v.\lambda m.\lambda f.\,f\,v,
+\]
+\[
+  \mathtt{any} = Y\,\big(\lambda\mathit{self}.\lambda t.\;
+  t\,(\lambda l.\lambda r.\,\mathtt{or}\,(\mathit{self}\,l)\,(\mathit{self}\,r))\,(\lambda v.\,v)\big),
+  \qquad t_0 = \mathtt{leaf}\;\mathtt{F},\quad t_{k+1} = \mathtt{node}\;t_k\;t_k,
+\]
+so $\mathtt{any}\,t_n$ reads to $\mathtt{F}$ with each of the $n+1$ shared subtrees evaluated once, linear in $n$ where a naive recursion would visit $2^{n}$ leaves.
+
+\paragraph{Game search}
+Minimax is an and-or tree: a maximizing position is the disjunction over its moves, a minimizing position the conjunction, a terminal a Boolean; a \emph{transposition}, the same position reached by a different move order, is the same interned state, computed once.
+\[
+  \mathtt{max} = \lambda l.\lambda r.\lambda x.\lambda n.\lambda f.\,x\,l\,r, \quad
+  \mathtt{min} = \lambda l.\lambda r.\lambda x.\lambda n.\lambda f.\,n\,l\,r, \quad
+  \mathtt{leaf} = \lambda v.\lambda x.\lambda n.\lambda f.\,f\,v,
+\]
+\[
+  \mathtt{value} = Y\,\big(\lambda\mathit{self}.\lambda p.\;
+    p\,(\lambda l.\lambda r.\,\mathtt{or}\,(\mathit{self}\,l)(\mathit{self}\,r))\,
+  (\lambda l.\lambda r.\,\mathtt{and}\,(\mathit{self}\,l)(\mathit{self}\,r))\,(\lambda v.\,v)\big).
+\]
+
+\paragraph{Graph reachability and program analysis}
+Reachability over a directed graph, cycles included, is the least fixpoint of the immediate-consequence operator. Andersen-style points-to (alias) analysis \cite{andersen1994-program-analysis-c, bravenboer2009-doop}, $\mathtt{pointsTo}(p,o)$ from $\mathtt{assign}(p,q)$ and $\mathtt{pointsTo}(q,o)$, is monotone Datalog. The cyclic graph $a\to b\to c\to a$ with $c\to d$, and the points-to program for $a=\mathtt{new}\,o_1;\,b=a;\,c=b$, are the clause sets
+\[
+  \begin{aligned}
+    &\mathtt{reach}(a),\quad \mathtt{reach}(b)\leftarrow\mathtt{reach}(a),\quad
+    \mathtt{reach}(c)\leftarrow\mathtt{reach}(b),\\
+    &\mathtt{reach}(a)\leftarrow\mathtt{reach}(c),\quad \mathtt{reach}(d)\leftarrow\mathtt{reach}(c);\\
+    &\mathtt{pt}(a,o_1),\quad \mathtt{pt}(b,X)\leftarrow\mathtt{pt}(a,X),\quad
+    \mathtt{pt}(c,X)\leftarrow\mathtt{pt}(b,X),
+  \end{aligned}
+\]
+so $\mathtt{reach}(d)$ and $\mathtt{pt}(c,o_1)$ hold while $\mathtt{reach}(e)$ and $\mathtt{pt}(c,o_2)$ do not.
+
+\paragraph{Lexical analysis}
+A deterministic finite automaton is a finite cyclic transition graph, and running it is a fold over the input that threads the state. Encoding the even state and the symbol $a$ as $\mathtt{T}$, the odd state and $b$ as $\mathtt{F}$, both two-way selectors,
+\[
+  \delta = \lambda s.\lambda x.\,s\,(x\,\mathtt{F}\,\mathtt{T})\,(x\,\mathtt{T}\,\mathtt{F}), \qquad
+  \mathtt{accepts} = \lambda s.\,s\,\mathtt{T}\,\mathtt{F},
+\]
+\[
+  \mathtt{run} = Y\,\big(\lambda\mathit{self}.\lambda s.\lambda w.\;
+  w\,(\lambda h.\lambda t.\,\mathit{self}\,(\delta\,s\,h)\,t)\,s\big),
+\]
+and $\mathtt{accepts}\,(\mathtt{run}\,\mathtt{T}\,w)$ is $\mathtt{T}$ exactly when $w$ has an even number of $a$s.
+
+\paragraph{Unification and recursive types}
+Equality of the behaviors two solution graphs unfold to is decided by cycle-detecting bisimulation~\cite{courcelle1983-infinite-trees}, the decidable core of rational-tree unification \cite{colmerauer1984-trees} and equirecursive ($\mu$-) type equality \cite{amadio1993-subtyping-recursive-types, brandt1998-coinductive-type-equality}: $Y\,(\mathtt{cons}\;0)$ and $Y\,(\lambda s.\,\mathtt{cons}\;0\;s)$ read out identically, while $Y\,(\mathtt{cons}\;1)$ differs.
+
+\paragraph{The metalanguage needs tabling too}
+The interpreter's own host-language term builder illustrates the point reflexively. Writing a shared subterm by reusing a builder gives a term whose construction unfolds the sharing exponentially, and a cyclic builder would not terminate, until the builder is memoized by binder depth, the host-language analogue of tabling. Intuitive code is slow or non-terminating exactly where the metalanguage does not table. The memo key here is the syntactic builder rather than the first-order behavioral identity the calculus folds on, but the moral is the same.
+
+\paragraph{Further instances}
+The same rational core underlies others not reproduced here: equality saturation over e-graphs
+\cite{willsey2021-egg, zhang2023-egglog} and binary decision diagrams \cite{bryant1986-bdd}, both of which are interning of a shared graph; garbage-collection reachability over a cyclic heap; abstract interpretation as a fixpoint over a finite abstract domain; and, with a non-trivial effect monad, the stationary distribution of a finite Markov chain. Each is a finite-state, regular, or finite-lattice-fixpoint computation, hence a rational behavior the construction reads.
+
+% app B（代码）：由 _editdistance_code.py 从 HOAS Builder 渲染（co_lambda/_hoas_latex.py），非手写；
+%   测试断言 \input 为当前生成。决策：
+%   * 用 breqn 的 dmath* 自动换行（preamble \usepackage{breqn}；texlive.nix 加 breqn+l3kernel）。理由：
+%     保留数学记号（λ、\mathtt）且长项（cmp/addc/ed）能换行；窄栏实测 breqn 0 处溢出，裸 \[ \] 4 处溢出。
+%     后备：_hoas_latex 的 TEXT_STYLE 可出 lstlisting（ASCII λ）。
+%   * 库命名统一小写（组合子 Y 除外），与 §1 house style（eq/min/succ/len）一致。
+%   * 渲染须保留绑定变量名：curry 会把参数名包成 "bound"，故 _dsl 用 lam_named 保留原参数名；
+%     同样，每个 Y 递归的 self-binder 用 lam_named 显示为函数名本身，使内外一致（iszero/addc/cmp/len/ed）。
+\section{Worked Examples}\label{app:examples}
+The generated material behind the three subsections of Section~\ref{sec:application}: each term with the library it is built from, and a trace of the solver. All of it is generated from the implementation, not transcribed by hand, the traces by running the interpreter and the listings from the source terms, and can be reproduced from\anon[ the supplementary material]{the accompanying code~\cite{colambda}}.
+
+\subsection{Edit Distance: The Term and Its Library}\label{app:editdistance-code}
+The edit-distance term $\mathtt{ed}$ and the pure-lambda library it is built from. Each definition uses only the names above it, and is rendered from the source term, so the listing cannot drift from the implementation: the bound-variable names are the ones the source carries, and a library constant is shown by name rather than expanded. Recursion is the $Y$ combinator, the character codes are BinNats~\cite{mogensen1992-self-interpretation}, and $\mathtt{nil}$ is also the BinNat zero, so the whole listing is closed pure $\lambda$-calculus.
+\input{generated/editdistance-code}
+
+% app A（trace）：由 _editdistance_trace.py monkey-patch compute_weak_head_normal_form + fixpoint
+%   cache getter 观测得到（compute/hit），缩进=调用深度；用 lstlisting 而非 breqn（缩进的调用树，
+%   breqn 表达不了）。两个【反直觉但关键】实现点（改 ed 或解释器时当心，否则 trace 悄悄出错）：
+%   * 识别 ed 子问题须按 head 身份 = {EDIT_DISTANCE 节点, Y 的自应用 (λx.F(xx))(λx.F(xx)) 节点}：
+%     Y 把递归 edit 绑到自应用而非 EDIT_DISTANCE 节点；且小 Scott 结构会碰撞（空后缀=BinNat 0=字符码 0
+%     =nil），只看参数会误判。
+%   * trace 前须清空全局持久的 WHNF 缓存，否则二次运行因缓存命中而一个 compute 都观测不到。
+\subsection{Edit Distance: The Trace}\label{app:editdistance-trace}
+The complete run of the solver of Algorithm~\ref{alg:whnf} on $\mathtt{ed}\,(\mathtt{cons}\,a\,(\mathtt{cons}\,b\,\mathtt{nil}))\,(\mathtt{cons}\,c\,(\mathtt{cons}\,d\,\mathtt{nil}))$, recorded by instrumenting the interpreter. Each line is a subproblem the solver reaches: \texttt{compute} the first time, when it solves the term and writes its layer to the table, and \texttt{hit} on every later occurrence, when the term is the same interned node and its tabled layer is returned without solving it again. Indentation is the call depth, and $a,b,c,d$ are the BinNat character codes. Nine subproblems are computed, the $(m{+}1)(n{+}1)$ states of the dynamic-programming table, and every other occurrence is a hit.
+\input{generated/editdistance-trace-full}
+
+% app §3.2（cyclic zeros）的素材：code = r 与其库（Y/cons/0）；trace = 精确 term-level 运行。均由 _cyclic_zeros_* 生成。
+% 【分工：附录给精确 trace，正文给直觉散文】此处 trace 必须做成【term-level、对应 §2 伪代码】：WHNF 的头 β-收缩
+%   r → W·W → (cons 0)(W·W) → 暴露 λc.λn. c 0 (W·W)（head 0、tail W·W），再 Out(W·W) 命中【进行中】的 W·W = back edge。
+%   令 W = λx.(cons 0)(x x)。须由【真 interned 项】生成（真 substitute/make_app；每层 assert == weak_head_normalize），
+%   非手写；pretty-printer 给 Y/cons/0/W/W·W 命名。原"单元胞 compute/hit"过抽象，待 _cyclic_zeros_trace.py 重做。
+%   code 用 breqn dmath*（与 ed 一致）。
+\subsection{The Stream of Zeros: The Term and Its Library}\label{app:cyclic-zeros-code}
+The cyclic stream $r = Y\,(\mathtt{cons}\,0)$ and the small library it is built from, rendered from the source terms. The element $0$ is the Church zero, $\mathtt{cons}$ is the Scott constructor, and recursion is the $Y$ combinator, so the whole listing is closed pure $\lambda$-calculus.
+\input{generated/cyclic-zeros-code}
+
+\subsection{The Stream of Zeros: The Trace}\label{app:cyclic-zeros-trace}
+The solver's run on $r = Y\,(\mathtt{cons}\,0)$, recorded from the interpreter. Each \texttt{Out} on a state runs the weak head step \texttt{WHNF}, contracting head redexes to expose the cons cell, then follows the tail; writing $W = \lambda x.\,\mathtt{cons}\,0\,(x\,x)$, unfolding $Y$ rewrites $r$ to the self-application $W\,W$, which exposes $\mathtt{cons}\,0\,(W\,W)$. The tail $W\,W$ is reached while it is still on the stack, so the solver closes the back edge there. Every step is read off the real interned terms, the exposed layers checked against the interpreter's weak head normal form.
+\input{generated/cyclic-zeros-trace}
+
+% app §3.3（omega）的素材：code = ω 与 Ω=ω ω（renderer 用 pass-through constant 出 \omega/\Omega）；
+%   trace = compute Ω → β 回到 Ω → 重入 stack 未暴露层 → ⊥。均由 _omega_* 生成。
+\subsection{$\Omega$: The Term and Its Library}\label{app:omega-code}
+The divergent term $\Omega = \omega\,\omega$ and the self-application $\omega = \lambda x.\,x\,x$ it is built from, rendered from the source terms.
+\input{generated/omega-code}
+
+\subsection{$\Omega$: The Trace}\label{app:omega-trace}
+The solver's run on $\Omega$, recorded from the interpreter and parallel to the stream's. \texttt{Out} runs the weak head step \texttt{WHNF}, which contracts the head redex; the contractum is $\Omega$ itself, the same interned term, so the solver re-enters it while it is still on the stack with no layer exposed and returns its running approximation, $\bot$; recomputation leaves it unchanged, so the iteration has converged and the solver halts. The reduction is read off the real terms, the contractum checked to be $\Omega$ and the result $\bot$.
+\input{generated/omega-trace}
+\fi % end \ifColambdaAppendix
+
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{references}
+
+\end{document}

@@ -1,0 +1,1403 @@
+% =====================================================================
+%  OUTDATED -- describes the OLD implementation. Retained for reference only.
+%  This draft documents the pre-DEFUN compiler: the typability-driven
+%  specializer that selected one of three runtime targets (call-by-value /
+%  call-by-name / interpret) and carved closed simply-typable sub-terms into
+%  compiled "islands", plus the multi-stage island-depth self-compilation
+%  climb. That whole architecture has been removed. The current compiler is
+%  the DEFUN defunctionalization compiler (each Lam becomes an @interned
+%  closure class, each App a Thunk); the self-compilation benchmark is now
+%  the interpreter-vs-defunctionalized comparison in generated/defun-benchmark.
+%  The live paper body is co-lambda.tex (input by preprint.tex / submission.tex);
+%  this file is input by nobody. The "Shared body" note just below is itself
+%  stale -- co-lambda.tex took that role. Do not treat the prose below as a
+%  description of the present implementation.
+% =====================================================================
+%  Solving Coalgebraic Equations in the Pure $\lambda$-Calculus
+% ---------------------------------------------------------------------
+%  Shared body. This file carries NO \documentclass: it is \input by two
+%  entry points that supply the class (mimicking ../inheritance-calculus):
+%    * preprint.tex   -- arXiv / preprint  (acmart, nonacm)
+%    * submission.tex -- POPL submission   (acmart, review, anonymous)
+%  Build both with: latexmk  (see latexmkrc)
+% ---------------------------------------------------------------------
+%  STATUS: working draft.
+%  * Placeholders are marked \TODO{...} and render in red.
+%  * Every bibliography entry is UNVERIFIED: author/title are best-effort
+%    recollections; years, venues, volumes, and pages are marked [verify].
+%    Do not cite from this file without checking each entry.
+%  * Proofs are sketches; load-bearing gaps are flagged with \TODO.
+% =====================================================================
+
+%% acmart already loads amsmath, amssymb, amsthm, xcolor, and hyperref;
+%% only mathtools needs to be added here.
+\usepackage{mathtools}
+
+%% listings renders the machine-generated Python in the compiler appendix.
+\usepackage{listings}
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  breakatwhitespace=false,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  language=Python,
+  xleftmargin=1em,
+  aboveskip=0.4\baselineskip,
+  belowskip=0.4\baselineskip,
+}
+
+% --- draft placeholder macro ------------------------------------------
+\newcommand{\TODO}[1]{\textcolor{red}{[\textbf{TODO:} #1]}}
+\newcommand{\citeTODO}[1]{\textcolor{red}{[\textbf{cite:} #1]}}
+
+% --- general notation --------------------------------------------------
+\newcommand{\Set}{\mathbf{Set}}
+\newcommand{\Beh}{B}                         % behaviour functor B = M F
+\newcommand{\rfp}{\varrho}                   % rational fixpoint
+\newcommand{\behav}{\mathsf{beh}}            % behaviour map into the final coalgebra
+\newcommand{\outm}{\mathsf{out}}             % structure map: the iteration of the equation morphism
+\newcommand{\stepm}{e}                       % equation morphism (the map e)
+\newcommand{\Delaym}{\mathsf{Delay}}
+\newcommand{\Pow}{\mathcal{P}}
+\newcommand{\iter}[1]{#1^{\dagger}}          % Elgot iteration
+
+% --- lambda-instance notation (used only in the HNF bridge/examples) ---
+\newcommand{\Sh}{\mathsf{Sh}}
+\newcommand{\Lamsh}{\mathsf{Lam}}
+\newcommand{\Appsh}{\mathsf{App}}
+\newcommand{\Varsh}{\mathsf{Var}}
+\newcommand{\dlam}{\mathord{\downarrow}\lambda}
+\newcommand{\dhead}{\mathord{\downarrow}\mathsf{h}}
+\newcommand{\darg}{\mathord{\downarrow}\mathsf{a}}
+\newcommand{\subt}[2]{#1\!\downarrow\!#2}
+\newcommand{\reduces}{\twoheadrightarrow}
+\newcommand{\bred}{\rightarrow_{\beta}}
+\newcommand{\present}{\mathtt{present}}
+
+% --- theorem environments ---------------------------------------------
+%% acmart provides theorem/lemma/proposition/corollary (acmplain) and
+%% definition/example (acmdefinition), all sharing the `theorem' counter.
+%% Only `remark' is missing, so we add it on the same shared counter.
+\AtBeginDocument{%
+  \theoremstyle{acmdefinition}%
+  \newtheorem{remark}[theorem]{Remark}%
+}
+
+\begin{document}
+
+\title{Solving Coalgebraic Equations in the Pure $\lambda$-Calculus}
+
+\author{Bo Yang}
+\affiliation{%
+  \institution{Figure AI Inc.}
+  \city{San Jose}
+  \state{California}
+  \country{USA}
+}
+\email{yang-bo@yang-bo.com}
+\thanks{The author completed this work independently and outside the scope of employment at Figure AI. No Figure AI time, funding, or other resources were used in support of this work.}
+
+\begin{abstract}
+  Representing and transforming cyclic and infinite data in the pure $\lambda$-calculus normally requires an added recursion construct, a \texttt{letrec}, a $\mu$-binder, or a built-in $Y$ for graph reduction: such data has no finite normal form, so ordinary reduction unfolds it forever instead of folding it into a finite cyclic graph, and an ordinary recursive function over it does the same. We show no extension is needed, and the denotational semantics is unchanged: a term keeps its standard meaning, which we represent as a finite cyclic graph when it is rational. The insight is that such data is the unique solution of a coalgebraic equation, and that any coalgebraic equation can be solved directly, by tabling: when a state recurs, the solver folds it into a back edge, so rational data, that with finitely many distinct subtrees, comes out as a finite cyclic graph. The solver halts when finitely many states are reachable, within that rational fragment, and the rational fragment is optimal, since data beyond it has no finite representation, so no denotation-preserving procedure halts on more. The algorithm's first application is the pure $\lambda$-calculus itself: head normalisation is such an equation, and because its states are first-order graph nodes rather than functions their equality is decidable where $\beta$-equality is not, so the solver is an interpreter. It decides $\Omega$ as $\bot$ in finite time and evaluates $\mathtt{map}\,\mathtt{succ}\,(Y\,(\mathtt{cons}\;0))$, an ordinary map over the cyclic stream of zeros, to the cyclic stream of ones as a finite cyclic graph, with no construct added. Because any coalgebra Scott-encodes as a $\lambda$-term, this one interpreter solves them all, making the pure $\lambda$-calculus a domain-specific language whose memoization and transposition tables fall out of node identity: Datalog least Herbrand models, graph reachability and Andersen points-to analysis, minimax search, and dynamic programming. A second example coalgebra is compilation. Its equation sends each sub-term of a source program, by specialization rules, to a node of a Python AST over that sub-term's own sub-terms, and its solution is the program optimised to that AST. A compiler computes it by the same tabling, compiling each shared sub-term once into a finite graph, and is itself a $\lambda$-term the interpreter solves, so program analysis is expressed as evaluation, and it compiles its own source in a self-hosting bootstrap.
+\end{abstract}
+
+\keywords{coalgebra, coalgebraic equations, rational fixpoint, algebraic compactness,
+  structure as identity, least fixpoint, rational trees, tabling, head reduction, Datalog,
+  program analysis, domain-specific language,
+  \texorpdfstring{$\lambda$-calculus}{lambda-calculus},
+\texorpdfstring{B\"ohm trees}{Bohm trees}}
+
+\maketitle
+
+% =====================================================================
+\section{Introduction}\label{sec:intro}
+% =====================================================================
+A coalgebra is a state set $X$ with a structure map that, at each state, exposes one
+layer of behaviour and names the successor states. Its \emph{behaviour}\footnote{Throughout,
+  \emph{behaviour} is meant in the coalgebraic sense: the tree a state unfolds to, that is, its
+  denotation, and not the operational behaviour in the sense of a reduction sequence or contextual
+  equivalence. In the $\lambda$-instance (Section~\ref{sec:bridge}) it is the L\'evy--Longo or B\"ohm
+  tree; the reduction is the internal process the structure map collapses, while the behaviour is the
+tree that process exposes. Two terms may thus share a behaviour yet reduce differently. This tree is the
+  first-order datum over the signature $F$, not the extensional behaviour of a higher-order value; and
+  behavioural \emph{equivalence}, sharing that tree, is a comparison among states, coarser than the
+  structural node identity the tabling uses to fold cycles, and in the $\lambda$-instance is B\"ohm-tree
+  equality, hence undecidable; we solve a single equation rather than compare states, so it is not a
+  relation the construction computes (Section~\ref{sec:intro}).} is the
+unfolding of that map: the possibly infinite tree obtained by exposing layer after layer. We make one
+observation about this unfolding and pursue its consequences. When the behaviour is
+\emph{rational},\footnote{Throughout, \emph{rational} qualifies a behaviour, that is, a tree: the
+  tree has finitely many distinct subtrees, equivalently it is the unfolding of a finite graph (a
+  regular, or Courcelle, tree). This is the rational-fixpoint sense, unrelated to rational numbers,
+and it is a property of the behaviour, not of the term or its reduction.} with finitely many
+distinct subtrees, it is the unfolding of a finite
+cyclic graph, and that graph is computed by \emph{tabling}: identify a state with its own
+behaviour, table the states seen so far, and when a state recurs while its behaviour is computed,
+tie a back edge instead of unfolding forever.
+
+Two things make this effective. The first is the form the input takes; the second is what makes its
+cycles detectable at all.
+
+First, the structure map need not be handed to us as a one-step observation. It may itself be
+produced by an \emph{internal process}: from a state, perform some internal steps, possibly
+none, until a layer of behaviour is exposed. We capture the internal process by an effect
+monad $M$ and the exposed layer by a signature functor $F$, so the datum is a coalgebra
+$\stepm\colon X \to M(F X + X)$ valued in the \emph{resumption} of $F$ over $M$
+(Definition~\ref{def:itcoalg}): the $F X$ summand exposes a layer, the $X$ summand continues
+silently, and $M$ carries the effect of the step. The one-step structure map
+$\outm \colon X \to M(F X)$ is then recovered as the least solution of the iteration that runs
+the silent steps (Definition~\ref{def:out}). Because it is a \emph{least} fixpoint, it ascends
+from $\bot$, so a silent cycle, a state whose internal process returns to it with no layer
+exposed, terminates as $\bot$ in finite time where the process alone diverges. Head
+normalisation of the $\lambda$-calculus is exactly this situation, with weak-head reduction as
+the internal process (Section~\ref{sec:bridge}).
+
+Second, recognising that a state has recurred is a test of \emph{identity}. This is the word the
+title turns on. The identity is decidable because the states are \emph{first-order}: they range
+over graph nodes, never over a function space. The cycle fold is then nothing special; it is
+ordinary tabling on state identity when the tabling core is the unfolding map. Where
+the states are higher-order values, as in the na\"ive reading of the $\lambda$-calculus, the only
+available identity is $\beta$-equality, which is undecidable, and neither memoisation nor cycle
+folding is computable. Reading behaviour off a first-order coalgebra is what makes identity
+decidable and the folding of cyclic structure effective.
+
+\paragraph{Why this answers the cyclic-data question}
+It is folklore that the pure $\lambda$-calculus cannot represent or manipulate cyclic data without
+an added recursion construct (a \texttt{letrec}, a $\mu$-binder, observable sharing, mutable
+references). The construction refutes this: the $\lambda$-calculus, read as an equation morphism,
+is one instance among many, and on it a pure term such as $Y\,(\mathtt{cons}\;0)$ has a rational
+behaviour, so tabling folds it into a finite circular graph and an ordinary recursive function over
+it terminates, with nothing added to the calculus (Sections~\ref{sec:bridge}, \ref{sec:application}).
+The capability is not special to the $\lambda$-calculus; it is a property of any equation morphism
+with rational behaviour.
+
+\paragraph{Contributions}
+\begin{itemize}
+  \item A reading of the behaviour of an equation morphism $\stepm \colon X \to M(F X + X)$ by
+    tabling its one-step structure map over the reachable states, parametric in an effect monad
+    $M$ (the internal process) and a signature functor $F$ (the exposed layer)
+    (Sections~\ref{sec:domain}, \ref{sec:itcoalg}). The one-step map $\outm = \iter{\stepm}$ is
+    the least solution of the silent iteration (Definition~\ref{def:out}), so divergence is
+    decided as $\bot$ in finite time on the rational fragment.
+  \item One fixpoint, and a graph for free (Sections~\ref{sec:itcoalg}, \ref{sec:readout}). The
+    only fixpoint is the silent collapse $\outm = \iter{\stepm}$, an \emph{unguarded least}
+    fixpoint resolving a silent cycle to $\bot$ (the bottom of $M$). Tabling $\outm$ over the
+    reachable states yields the finite cyclic graph directly: its nodes are the states, and a
+    cycle is automatic when $\outm$ names a state already tabled. No separate behaviour fixpoint is
+    needed; the graph is the reachable sub-coalgebra $(R(M),\outm)$.
+  \item Adequacy (Theorem~\ref{thm:adequacy}): the reachable sub-coalgebra $(R(M),\outm)$ unfolds to
+    the behaviour of $\stepm$ up to silent steps, agreeing layer for layer with what the coalgebra
+    enumerates. Termination (Theorem~\ref{thm:termination}): tabling halts iff finitely many
+    states are reachable, and then the graph is a finite element of the rational fixpoint
+    $\rfp\Beh$. Two independent finiteness conditions appear (Remark~\ref{rem:tworationalities}).
+  \item Least equals greatest (Theorem~\ref{thm:unique}): because $\outm$ exposes a constructor or
+    $\bot$, the behaviour functional is guarded, hence a contraction with a \emph{unique} fixpoint,
+    so the least-fixpoint reading and the coinductive unfolding coincide and no least-versus-greatest
+    choice arises. This is the operational face of algebraic compactness over the $\bot$-completed
+    domain (Remark~\ref{rem:compact}); the least fixpoint is indispensable only at the silent
+    collapse, where it decides divergence as $\bot$ (Remark~\ref{rem:leastessential}).
+  \item A bridge (Section~\ref{sec:bridge}): head and weak-head normalisation of the pure
+    $\lambda$-calculus are the instance $M = \Delaym$ (pure divergence) and $F$ the
+    $\lambda$-shape signature. There $\outm$ is the weak-head shape relation, $\Omega$ reads out
+    as $\bot$, and a guarded cyclic term reads out as a finite cyclic graph. Deterministic
+    reduction strategies in general are the case $M = \Delaym$ (Remark~\ref{rem:determinism}).
+  \item As an application, structural computation over cyclic data inside the pure
+    $\lambda$-calculus (Section~\ref{sec:application}): an ordinary $\mathtt{map}$, with nothing
+    cycle-aware in it, folds a circular list into a circular list, and a na\"ive walk terminates
+    where head reduction diverges.
+\end{itemize}
+
+\paragraph{Supplementary material}
+An executable implementation accompanies the paper: a first-order interpreter for the
+$\lambda$-instance of Section~\ref{sec:bridge} ($\Varsh$/$\Lamsh$/$\Appsh$, no recursion binder), in
+which a term's behaviour is read by tabling the weak-head structure map (Definition~\ref{def:shbridge}),
+whose least-fixpoint silent collapse decides an unproductive cycle as $\bot$ and whose reachable
+sub-coalgebra is the finite cyclic graph, printed with explicit back-references.\anon[ It is included
+as supplementary material.]{ It is openly available
+at \url{https://github.com/Atry/MIXINv2}~\cite{colambda}.} It realises the construction
+directly: the silent collapse $\outm$ as a least fixpoint (with a finite-budget first iterate as a
+policy flag), and the tabling that folds on structural identity, realised by interning so identity is
+a pointer test. It also provides the head structure map of Remark~\ref{rem:boehm} as a second
+least-fixpoint instance over the same carrier and behaviour map. The examples of
+Sections~\ref{sec:overview}, \ref{sec:bridge}, and \ref{sec:application} are reproduced as tests:
+$Y\,(\mathtt{cons}\;0)$ folds to a finite cyclic graph, $\Omega$ and $Y\,(\lambda x.x)$ read out as
+$\bot$, the na\"ive walk terminates over the cyclic stream where head reduction loops, the
+rationality dichotomy of Theorem~\ref{thm:termination} is exercised on a rational and a non-rational
+stream, and the weak-head and head readings are checked to terminate together while differing on
+$\lambda x.\,\Omega$ (Remark~\ref{rem:boehm}).
+
+% =====================================================================
+\section{Overview}\label{sec:overview}
+% =====================================================================
+Take the cyclic stream of zeros, $r = \mathtt{cons}\;0\;r$. As the behaviour of a coalgebra it is the
+infinite tree $\mathtt{cons}\;0\;(\mathtt{cons}\;0\;\cdots)$, but it has only \emph{two} distinct
+subtrees, $0$ and $r$ itself, so it is rational. Reading it off by tabling, the cell
+$\mathtt{cons}\;0\;(-)$ is registered before its tail is followed; the tail returns to that very
+cell, which is already in the table, so the tabling ties a back edge and stops. The result is a
+finite graph, a node pointing to itself, that unfolds to the infinite stream. Any presentation of $r$
+as an equation morphism with this behaviour gives the same finite graph, the $\lambda$-term
+$Y\,(\mathtt{cons}\;0)$ among them (Section~\ref{sec:bridge}).
+
+Now take a process that returns to a state \emph{without} ever exposing a layer: an
+\emph{unproductive} cycle. There is nothing to tie a back edge to. This is the one place a fixpoint is
+needed: the structure map $\outm$ is the least fixpoint of the silent iteration, so an unproductive
+cycle, having nothing to fill its hole, settles at $\bot$. In the $\lambda$-instance this is reached
+by a recursive binder ($\mathtt{letrec}\;x=x$) and equally by self-application,
+$\Omega=(\lambda x.x\,x)(\lambda x.x\,x)$, which steps to itself with no constructor exposed, so
+$\Omega = \bot$, decided in finite time where reduction loops forever.
+
+So there is a single fixpoint, the silent collapse $\outm$. The guarded cycle above is not a second
+fixpoint but a back edge the tabling ties for free: the tail already \emph{is} the registered cell, so
+the cyclic graph is there in the coalgebra and computing the behaviour merely prints it. The guarded case folds,
+the unproductive case bottoms out, and whether either terminates is governed by one property,
+rationality, developed next.
+
+% =====================================================================
+\section{The behaviour domain}\label{sec:domain}
+% =====================================================================
+We fix the codomain of the behaviour map, the trees a coalgebra unfolds to, and the order along which the
+fixpoints below ascend, before introducing the coalgebra that drives them.
+
+\subsection{Signature and effect}
+\begin{definition}[Signature functor]\label{def:signature}
+  A \emph{signature} is a finitary container functor $F\colon \Set \to \Set$,
+  $F X = \coprod_{\sigma \in \Sigma} X^{\mathit{ar}(\sigma)}$, for a set $\Sigma$ of operations with
+  finite arities $\mathit{ar}(\sigma) \in \mathbb{N}$. We require equality of \emph{shapes} (operations
+  together with their arity, i.e.\ the elements of $\Sigma$) to be decidable and hashable. The flat
+  domain of shapes is $F_{\bot} X = F X \cup \{\bot\}$, ordered by $\bot \sqsubseteq c$ for every $c$
+  and no other strict relation.
+\end{definition}
+
+\begin{definition}[Iteration-ready (Elgot) monad]\label{def:elgot}
+  An \emph{iteration-ready} monad is a monad $M$ on $\Set$ such that each $M A$ is a pointed
+  $\omega$-complete partial order with least element $\bot_{MA}$ (the \emph{divergent} computation), the
+  unit $\eta$ and Kleisli extension $(-)^{*}$ are $\omega$-continuous, and $\bot$ is preserved by
+  Kleisli composition (a divergent prefix diverges). Consequently every $f\colon X \to M(Y + X)$ has a
+  least \emph{iteration} $\iter{f}\colon X \to M Y$, the least fixpoint of
+  $g \mapsto \big(\,[\,\eta\circ\mathrm{inl},\,g\,]^{*}\big)\circ f$ in the pointwise order. This is the
+  order-theoretic presentation of a \emph{complete Elgot monad} \citeTODO{adamek-milius-velebil,
+  goncharov-elgot}.
+\end{definition}
+
+\begin{example}[Effects]\label{ex:effects}
+  $M = \Delaym$, the delay monad $\Delaym A = \nu Z.\,(A + Z)$ \citeTODO{capretta}, is the free
+  iteration-ready monad on the identity: $\bot$ is the infinite \texttt{later}, divergence. It models a
+  \emph{deterministic} process with no effect but possible non-termination, and is the case the
+  $\lambda$-calculus instance uses (Section~\ref{sec:bridge}). $M = \Pow$ (powerset) models
+  non-determinism, with $\bot = \varnothing$ and the iteration a set-valued least fixpoint; $M$ a
+  subdistribution monad models probabilistic choice; $M = S \Rightarrow (S \times -)$ models state.
+  Every definition and theorem below is stated for an arbitrary iteration-ready $M$.
+\end{example}
+
+\begin{definition}[Behaviour functor]\label{def:behfun}
+  The \emph{behaviour functor} is $\Beh = M\circ F$. A one-step coalgebra is a map $X \to \Beh X$. We
+  write $\nu\Beh$ for the final $\Beh$-coalgebra (the domain of behaviours) and $\rfp\Beh$ for its
+  \emph{rational fixpoint}, the colimit of the finite $\Beh$-coalgebras, equivalently the behaviours
+  with finitely many distinct subtrees \citeTODO{adamek-milius-velebil-rational}.
+\end{definition}
+
+\subsection{Trees, order, rationality}
+For the order and the explicit tree presentation we spell out the deterministic skeleton; with a
+non-trivial $M$ each node additionally carries the $M$-structure of its layer (a set of layers for
+$M=\Pow$, a distribution for a probabilistic $M$, and so on), and the order and completeness lift
+$M$-pointwise.
+
+\begin{definition}[Trees]\label{def:domain}
+  A \emph{tree} is a partial $\Sigma$-labelling of the arity-respecting positions reachable by
+  descent, with a distinguished $\bot$ leaf for an exposed-nothing node. Formally a tree is a map
+  $t\colon \mathrm{dom}(t) \to \Sigma \cup \{\bot\}$ with $\mathrm{dom}(t)$ prefix-closed under the
+  descent into children and arity-respecting: a node labelled $\sigma$ has exactly $\mathit{ar}(\sigma)$
+  children and a node labelled $\bot$ has none. Let $D$ be the set of all finite or infinite such trees,
+  carrying the $M$-structure of Definition~\ref{def:behfun} at each node.
+\end{definition}
+
+\begin{definition}[Approximation order]\label{def:order}
+  For $t,u \in D$, $t \sqsubseteq u$ iff $\mathrm{dom}(t) \subseteq \mathrm{dom}(u)$ and for every
+  $p \in \mathrm{dom}(t)$ either $t(p) = u(p)$ or $t(p) = \bot$. Thus $u$ refines $t$ by replacing
+  $\bot$-leaves with subtrees (and, under a non-trivial $M$, by refining the $M$-structure
+  pointwise).
+\end{definition}
+
+\begin{proposition}[The codomain is a domain]\label{prop:cpo}
+  $(D,\sqsubseteq)$ is a pointed $\omega$-complete partial order with least element
+  $\bot_D$ (the single $\bot$ leaf), and least upper bounds of $\sqsubseteq$-directed families exist and
+  are computed nodewise. Proof in Appendix~\ref{app:domain}.
+\end{proposition}
+
+\begin{definition}[Rational behaviour]\label{def:rational}
+  $t \in D$ is \emph{rational} if its set of subtrees is finite; equivalently $t$ is the unfolding of a
+  finite $\Sigma$-labelled graph, equivalently $t \in \rfp\Beh$ (Definition~\ref{def:behfun}).
+\end{definition}
+
+% =====================================================================
+\section{Equation morphisms and the structure map}\label{sec:itcoalg}
+% =====================================================================
+The development is parametric in the internal process that produces the structure map. We give it,
+extract the one-step map by collapsing the silent steps, and record that the collapse is a least
+fixpoint.
+
+\begin{definition}[Equation morphism]\label{def:itcoalg}
+  An \emph{equation morphism} is a map
+  \[
+    \stepm \colon X \longrightarrow M\big(F X + X\big),
+  \]
+  where $X$ is a set of \emph{states} with decidable, hashable equality. From a state, $\stepm$
+  performs one $M$-step whose result is either a layer of behaviour, $\mathrm{inl}(t)$ with $t \in F X$,
+  or a silent continuation, $\mathrm{inr}(x')$ with $x' \in X$. The $\mathrm{inl}$ alternative is
+  \emph{guarded} (a layer is exposed), the $\mathrm{inr}$ alternative \emph{unguarded} (the process
+  continues with no layer). Reachability is closed under both alternatives, so the children of an
+  exposed layer and every silent successor are again states.
+\end{definition}
+
+\begin{definition}[The structure map]\label{def:out}
+  The \emph{structure map} is the iteration that runs the silent steps to the next layer,
+  \[
+    \outm \;:=\; \iter{\stepm} \colon X \longrightarrow M(F X),
+  \]
+  the least fixpoint (Definition~\ref{def:elgot}) of
+  $\Phi(g)(x) = \big(\,[\,\eta\circ\mathrm{inl},\,g\,]^{*}\big)(\stepm(x))$. Equivalently $\outm(x)$ runs
+  $\stepm$ from $x$, following $\mathrm{inr}$ continuations, and returns the first $\mathrm{inl}$ layer
+  under the accumulated $M$-effect; where the silent process never exposes a layer, $\outm(x)$ is the
+  divergent computation $\bot_{M(FX)}$.
+\end{definition}
+
+\begin{proposition}[The structure map is well-defined]\label{prop:outwd}
+  For every iteration-ready $M$ and every equation morphism $\stepm$, $\Phi$ is monotone and
+  $\omega$-continuous in the pointwise order on $X \to M(F X)$, so by Kleene
+  $\outm = \bigsqcup_{k} \Phi^{k}(\lambda x.\,\bot)$ exists and is the least fixpoint, and $\outm(x)$ is
+  the divergent computation exactly when the silent process from $x$ exposes no layer. Proof in
+  Appendix~\ref{app:out}.
+\end{proposition}
+
+\begin{remark}[Why the bottom is $\bot$, and why that is sound]\label{rem:bottom}
+  The iteration ascends from a bottom value, and that bottom is the divergent computation $\bot$ of $M$,
+  fresh and distinct from every exposed layer. This is what makes the resolution test exact: a state is
+  resolved precisely when its value is no longer $\bot$, so a silent cycle is recognised as soon as it
+  returns to a state already on the stack, and decided as $\bot$ in finite time. Reusing an exposed
+  value as the bottom would make a still-unresolved state indistinguishable from one that genuinely
+  computed that value, and a round could read a placeholder as a real value and reach a wrong fixpoint.
+  The only identity test, the one that lets the iteration recognise a cycle, is the decidable equality
+  of states, not an equality of the values they compute.
+\end{remark}
+
+The structure map turns the equation morphism $\stepm$ into an ordinary one-step coalgebra
+$\outm \colon X \to \Beh X$ for $\Beh = M F$ (Definition~\ref{def:behfun}). The rest of the
+development runs on $\outm$ and never re-inspects the silent steps. The next definition is the
+positive presentation that makes $\Phi$ monotone above; like the rest, it is parametric in $M$ and
+$F$.
+
+\begin{remark}[Positivity]\label{rem:positivity}
+  The clauses of $\stepm$ are \emph{positive}: the choice between exposing a layer and continuing is a
+  positive disjunction over the $M$-result, never a negation-as-failure test such as ``no layer is
+  exposable''. Positivity is what makes $\Phi$ monotone, hence $\outm$ a least fixpoint by
+  Knaster--Tarski, so well-definedness of $\outm$ costs nothing beyond fixing the positive presentation.
+  The work of the paper is elsewhere (Sections~\ref{sec:readout}--\ref{sec:application}).
+\end{remark}
+
+% =====================================================================
+\section{The rational graph: the reachable sub-coalgebra}\label{sec:readout}
+% =====================================================================
+The structure map is already an ordinary one-step coalgebra $\outm \colon X \to \Beh X$
+(Definition~\ref{def:out}) whose successors are again states, so nothing further need be built: the
+graph is the part of $(X,\outm)$ reachable from the root. Computing the behaviour is tabling $\outm$.
+
+\begin{definition}[Reachable sub-coalgebra]\label{def:reach}
+  For a state $M$, the \emph{reachable set} $R(M) \subseteq X$ is the least set containing $M$ and
+  closed under the successors of $\outm$: if $x \in R(M)$ and $\outm(x)$ exposes a layer
+  $\sigma(x_1,\dots,x_k)$, then $x_1,\dots,x_k \in R(M)$ (for a branching $M$, every state in every
+  alternative of the layer). The \emph{graph} of $M$ is the sub-coalgebra $(R(M),\outm)$: nodes are the
+  reachable states, edges are $\outm$, and a node with $\outm(x)=\bot$ is the meaningless leaf.
+\end{definition}
+
+\begin{definition}[Reading the graph; the behaviour it denotes]\label{def:behreadout}
+  The graph $(R(M),\outm)$ is computed by \emph{tabling} $\outm$: keep a table of resolved states; from
+  $M$, compute $\outm(M)$ and, for each successor state, reuse its table entry or recurse and add one. A
+  successor already tabled closes a \emph{cycle}; a state with $\outm(x)=\bot$ is a leaf. The
+  \emph{behaviour} $\behav(M) \in \nu\Beh$ is what this graph denotes: the unfolding of $(R(M),\outm)$,
+  equivalently the unique $\Beh$-coalgebra morphism $X \to \nu\Beh$ at $M$ (finality). The behaviour is
+  never materialised; the graph is its finite presentation, and every question about it is answered on
+  the graph.
+\end{definition}
+
+\begin{remark}[One fixpoint; cycles for free]\label{rem:twofix}
+  There is only one fixpoint: the silent collapse $\outm = \iter{\stepm}$ (Definition~\ref{def:out}), an
+  unguarded least fixpoint that decides an unproductive cycle as $\bot$. Building the graph is not a
+  second fixpoint. A cycle appears the moment $\outm$ names a state already tabled, so the back edge is
+  structural, not tied by a separate computation, and ``reading out'' is just enumerating
+  $(R(M),\outm)$; printing it with explicit back-references is a traversal of that finite graph, again no
+  fixpoint. The whole algorithm is: table $\outm$.
+\end{remark}
+
+\begin{definition}[Guarded and unproductive states]\label{def:guarded}
+  A state $x$ is \emph{cyclic} if a state equal to it recurs strictly below it on some descent of
+  $\outm$. A cyclic $x$ is \emph{guarded} if $\outm(x)$ exposes a layer before the re-entry, and
+  \emph{unproductive} if $\outm(x) = \bot$, so the silent process of $x$ returns to it with no layer
+  exposed. A guarded cycle is a graph node pointing back to an earlier node, the finite representation of
+  a rational behaviour; an unproductive cycle is the $\bot$ leaf.
+\end{definition}
+
+% =====================================================================
+\section{Adequacy and termination}\label{sec:adequacy}
+% =====================================================================
+\begin{theorem}[Adequacy]\label{thm:adequacy}
+  For every equation morphism $\stepm \colon X \to M(F X + X)$, the graph $(R(M),\outm)$
+  (Definition~\ref{def:reach}) unfolds to the behaviour of $\stepm$ up to silent steps: its unfolding
+  $\behav(M)$ is the unique $\Beh$-coalgebra morphism $X \to \nu\Beh$ through the structure map
+  $\outm = \iter{\stepm}$ (Definition~\ref{def:behreadout}), so the graph agrees layer for layer with
+  the unfolding the coalgebra enumerates once the silent steps are run. Proof in
+  Appendix~\ref{app:adequacy}.
+\end{theorem}
+
+\noindent
+There is no normal-form translation to justify and no administrative bridge: once the silent steps are
+collapsed into $\outm$, the graph is the behaviour's finite presentation essentially by construction,
+and the only content is that the silent collapse $\iter{\stepm}$ presents the internal process
+faithfully (Proposition~\ref{prop:outwd}).
+
+\begin{theorem}[Termination]\label{thm:termination}
+  For every equation morphism with decidable state equality, tabling $\outm$ from $M$ halts if and
+  only if finitely many states are reachable from $M$ (the reachable set $R(M)$ is finite,
+  Definition~\ref{def:reach}), and in that case the graph $(R(M),\outm)$ is a finite cyclic graph whose
+  unfolding lies in the rational fixpoint $\rfp\Beh$ (Definition~\ref{def:rational}). When infinitely
+  many states are reachable, the tabling enumerates them and diverges. Proof in
+  Appendix~\ref{app:termination}.
+\end{theorem}
+
+\begin{remark}[Two finiteness conditions]\label{rem:tworationalities}
+  Two independent conditions govern termination, both with respect to structural state identity. The
+  silent collapse $\outm(x)$ (Definition~\ref{def:out}) halts iff the silent orbit from $x$ is finite,
+  returning to a state already seen rather than producing ever-new ones. The graph
+  (Definition~\ref{def:behreadout}) halts iff the reachable states $R(M)$ are finite. They are logically
+  independent: the silent orbit of a state may be infinite while the reachable states are finite, or
+  conversely. Either failure is genuine non-termination of the construction.
+\end{remark}
+
+\begin{remark}[Uniqueness does not characterise halting]\label{rem:notmunu}
+  One might hope the tabling halts exactly when the least and greatest fixpoint coincide. They always
+  coincide (Theorem~\ref{thm:unique} gives a unique fixpoint for \emph{every} term), yet the tabling does
+  not halt on every term, so $\mu=\nu$ cannot be the criterion. The witness is the stream of all
+  naturals, $\mathit{nats} = Y(\lambda s.\lambda n.\,\mathtt{cons}\,n\,(s\,(\mathtt{succ}\,n)))\,\underline{0}$:
+  it is guarded, so its behaviour is that unique fixpoint, a well-defined infinite stream, but the stream
+  is \emph{non-rational} (its tails are pairwise distinct), so it has no finite representation and the
+  tabling diverges. Halting is governed by rationality, which is strictly stronger than uniqueness: the
+  rational behaviours are a proper subclass of the (always unique) behaviours.
+\end{remark}
+
+\begin{theorem}[Finite-representation barrier; optimality]\label{thm:optimal}
+  By a \emph{finite representation} of a behaviour $t \in \nu\Beh$ we mean a finite $\Sigma$-graph whose
+  unfolding is $t$ (a first-order datum, to be distinguished from a finite \emph{generator}, a term that
+  reduces to $t$). The statement is for the deterministic skeleton; for a branching $M$ the labels carry
+  the $M$-structure and $\rfp\Beh$ is the corresponding rational fixpoint, and the argument lifts
+  unchanged. Then:
+  \begin{enumerate}
+    \item \emph{(Barrier.)} $t$ has a finite representation iff $t$ is rational (Definition~\ref{def:rational},
+      i.e.\ $t \in \rfp\Beh$); hence no procedure halts with a finite representation of a non-rational
+      behaviour, even though every behaviour has a finite generator.
+    \item \emph{(Soundness.)} Whenever the tabling halts it outputs a finite representation
+      (Theorems~\ref{thm:termination}, \ref{thm:adequacy}), so it halts only on rational behaviours.
+    \item \emph{(Attainment.)} The tabling halts iff finitely many positions are reached up to the identity
+      it folds on. Under structural identity the halting set is a proper subclass of the rational
+      behaviours, the gap being the dead-subterm witnesses ($Y\,F\,\underline{0}$ with
+      $F=\lambda s.\lambda n.\,\mathtt{cons}\,0\,(s\,(\mathtt{succ}\,n))$); folding additionally any
+      positions of equal behaviour enlarges it, and in the limit, folding all behaviourally equal
+      positions (a coarser identification than structural identity, and in the $\lambda$-instance not
+      decidable, so an ideal limit rather than the relation the implementation folds on), the tabling
+      halts iff the behaviour is rational. By (1) no sound identity pushes the halting set beyond the
+      rational fragment.
+  \end{enumerate}
+\end{theorem}
+\begin{proof}
+  \emph{(1)} A finite representation is a finite $\Sigma$-graph; its unfolding has at most one distinct
+  subtree per node, hence finitely many, so it is rational. Conversely a rational $t$, having finitely
+  many distinct subtrees, is the unfolding of the finite graph on those subtrees with an edge to each
+  immediate subtree of a root; this is the standard equivalence for regular trees \citeTODO{courcelle},
+  and the rational behaviours are exactly $\rfp\Beh$ (Definition~\ref{def:behfun}). Hence a non-rational
+  $t$ is the unfolding of no finite $\Sigma$-graph, so no procedure can output one. The generator clause
+  is immediate: the term $M$ is a finite generator of $\behav(M)$ for every $M$, rational or not. The
+  barrier is against any \emph{regular} (first-order, finitely presented) representation, each of which
+  unfolds to only rational trees; only a Turing-complete generator, such as the term itself, escapes it.
+
+  \emph{(2)} If the tabling halts then by Theorem~\ref{thm:termination} the reached positions are finite
+  and the result is a finite graph in $\rfp\Beh$, which by Theorem~\ref{thm:adequacy} unfolds to
+  $\behav(M)$; so a halt witnesses $\behav(M) \in \rfp\Beh$.
+
+  \emph{(3)} The tabling descends through positions up to the folding identity and tables them, so it
+  halts iff those classes are finite (Theorem~\ref{thm:termination}). Structural identity can keep
+  infinitely many classes while the behaviour is rational: in the cited witness every tail
+  $Y\,F\,\underline{k}$ is a distinct closed term, yet all denote the one constant-$0$ stream, which is
+  rational; so the halting set is a proper subclass of the rational behaviours. An identity that only
+  ever identifies positions of equal behaviour is sound (it changes no tree, Theorem~\ref{thm:adequacy})
+  and yields fewer classes, hence a larger halting set; for the coarsest such identity two positions are
+  identified exactly when their subtrees are equal, so the classes are the distinct subtrees of
+  $\behav(M)$, finite iff $\behav(M)$ is rational. That identity therefore halts iff rational, and by (1)
+  no sound identity can do better. That coarsest identity is effective on the rational fragment, where
+  each fold is decided by cycle-detecting bisimulation; the implementation here ships structural identity
+  instead, which sits strictly below it, the gap being the dead-subterm witnesses.
+\end{proof}
+
+\begin{remark}[The optimum is relative to the denotation]\label{rem:fixeddenotation}
+  The optimum in Theorem~\ref{thm:optimal} is among procedures that \emph{preserve the denotation}, the
+  tree. A fold changes no tree exactly when it identifies only behaviourally equal positions, so
+  behavioural equivalence is the coarsest denotation-preserving identity, and it is what attains the
+  rational ceiling (structural identity, fixed by the syntax, sits below it; behavioural equivalence,
+  relative to the chosen normalisation, sits at it). Folding more would identify positions of
+  \emph{different} behaviour: that is a coarser normalisation, a different tree, hence a different
+  denotation. One can then terminate on more, even on $\mathit{nats}$ by collapsing its distinct tails,
+  but one is computing a different semantics. Thus Theorem~\ref{thm:optimal}(1) is the barrier \emph{at a
+  fixed denotation}; termination beyond it is bought only by changing what is computed.
+\end{remark}
+
+\begin{remark}[Optimal semi-decision]\label{rem:semidec}
+  Rationality is undecidable: given a machine $T$, the term that emits the constant-$0$ stream while
+  simulating $T$ and switches to emitting $0,1,2,\dots$ once $T$ halts has a rational behaviour iff $T$
+  never halts, so rationality is co-r.e.-hard. Hence the terminating inputs cannot be pre-selected. The tabling is thus a \emph{sound semi-decision procedure}
+  for rationality: on the rational fragment (up to its identity, Theorem~\ref{thm:optimal}(3)) it halts
+  and returns the finite representation, and elsewhere it diverges, which by Theorem~\ref{thm:optimal}(1)
+  is the most any procedure can achieve.
+\end{remark}
+
+\begin{remark}[Determinism: reduction strategies]\label{rem:determinism}
+  When $M = \Delaym$, an equation morphism is a deterministic observe-or-step system
+  $X \to F X + X$ (one silent successor, divergence the only effect), the behaviour functor is $\Beh = F$
+  with $\nu\Beh$ the ordinary $F$-trees, and the silent collapse decides an unproductive cycle as the
+  single value $\bot$. This is the case of a \emph{deterministic reduction strategy}: head and
+  weak-head normalisation (Section~\ref{sec:bridge}), and equally call-by-name and call-by-value head
+  reduction, differ only in the choice of $F$ and of which redex the step contracts, never in the
+  $M = \Delaym$ shape. Richer $M$ (non-deterministic, probabilistic, stateful) leaves the architecture
+  intact but replaces the cycle-to-$\bot$ collapse with the corresponding $M$-least fixpoint, for
+  $M = \Pow$ a set-valued one.
+\end{remark}
+
+% =====================================================================
+\section{The behaviour has a unique fixpoint: least equals greatest}\label{sec:unique}
+% =====================================================================
+The behaviour was introduced coinductively, as the unfolding of $\outm$ into $\nu\Beh$
+(Definition~\ref{def:behreadout}). It is equally the order-theoretic least fixpoint of a behaviour
+functional, and the two coincide: that functional is \emph{guarded}, so it has a \emph{unique}
+fixpoint, and no least-versus-greatest choice arises. Once $\outm$ has exposed a constructor,
+induction and coinduction agree.
+
+\begin{definition}[Behaviour functional]\label{def:readoutfun}
+  The \emph{behaviour functional} $\Psi\colon (X \to D) \to (X \to D)$ reads one $\Beh$-layer off the
+  structure map and defers to its argument for the children:
+  \[
+    \Psi(g)(n) =
+    \begin{cases}
+      \bot & \outm(n) = \bot,\\
+      \sigma\big(g(n_1),\dots,g(n_k)\big) & \outm(n) \text{ exposes the layer } \sigma(n_1,\dots,n_k),
+    \end{cases}
+  \]
+  the $M$-structure of the exposed layer (for a branching $M$) carried at the root, above the children.
+  By Proposition~\ref{prop:cpo} the pointwise order on $X \to D$ is a pointed $\omega$-CPO and $\Psi$ is
+  monotone and $\omega$-continuous, so $\operatorname{lfp}(\Psi) = \bigsqcup_{k} \Psi^{k}(\lambda n.\,\bot_D)$
+  exists.
+\end{definition}
+
+\begin{definition}[Tree metric]\label{def:metric}
+  For $t,u \in D$ put $\mathrm{d}(t,u) = 0$ if $t = u$, and otherwise $\mathrm{d}(t,u) = 2^{-\ell}$ where
+  $\ell$ is the least length $|p|$ of a position $p \in \mathrm{dom}(t) \cup \mathrm{dom}(u)$ at which $t$
+  and $u$ differ ($p$ lies in only one domain, or $t(p) \neq u(p)$). Lift it to $X \to D$ by
+  $\mathrm{d}(g,h) = \sup_{n} \mathrm{d}(g(n),h(n))$.
+\end{definition}
+
+\begin{proposition}[The tree space is complete]\label{prop:metric}
+  $(D,\mathrm{d})$ is a complete ultrametric space, and hence so is $(X \to D, \mathrm{d})$ under the
+  supremum metric \citeTODO{arnold-nivat}. A Cauchy sequence of trees stabilises at every fixed depth,
+  so it has a level-wise limit in $D$; the metric topology agrees with the $\omega$-CPO of
+  Proposition~\ref{prop:cpo} in that the $\mathrm{d}$-limit of a $\sqsubseteq$-increasing sequence is its
+  least upper bound.
+\end{proposition}
+
+\begin{lemma}[The behaviour functional is guarded]\label{lem:guarded}
+  $\Psi$ is a contraction with factor $\tfrac{1}{2}$:
+  $\mathrm{d}(\Psi(g),\Psi(h)) \le \tfrac{1}{2}\,\mathrm{d}(g,h)$.
+\end{lemma}
+\begin{proof}
+  Fix a state $n$. The root label of $\Psi(g)(n)$ is determined by $\outm(n)$ alone, independently of
+  $g$: it is $\bot$ when $\outm(n) = \bot$, and the operation $\sigma$ when $\outm(n)$ exposes
+  $\sigma(n_1,\dots,n_k)$. So $\Psi(g)(n)$ and $\Psi(h)(n)$ always share the root ($|p| = 0$) label and
+  can differ only strictly below it. If $\outm(n) = \bot$ or a nullary layer, they are equal and
+  $\mathrm{d}(\Psi(g)(n),\Psi(h)(n)) = 0$. Otherwise a shortest position at which they differ is one
+  descent step into some child $n_i$ followed by a shortest differing position of $g(n_i)$ and $h(n_i)$,
+  so its length is $1$ greater, giving
+  \[
+    \mathrm{d}\big(\Psi(g)(n),\Psi(h)(n)\big) = \tfrac{1}{2}\,\max_{i}\,\mathrm{d}\big(g(n_i),h(n_i)\big)
+    \le \tfrac{1}{2}\,\mathrm{d}(g,h).
+  \]
+  Taking the supremum over $n$ gives $\mathrm{d}(\Psi(g),\Psi(h)) \le \tfrac{1}{2}\,\mathrm{d}(g,h)$.
+\end{proof}
+
+\begin{theorem}[Least equals greatest]\label{thm:unique}
+  $\Psi$ has a unique fixpoint, and it is simultaneously
+  \begin{enumerate}
+    \item the order-theoretic least fixpoint $\operatorname{lfp}(\Psi) = \bigsqcup_{k} \Psi^{k}(\lambda n.\,\bot_D)$, and
+    \item the coinductive unfolding $\behav$, the unique $\Beh$-coalgebra morphism $X \to \nu\Beh$ over
+      $\outm$ (Definition~\ref{def:behreadout}).
+  \end{enumerate}
+  Hence the least-fixpoint reading and the coinductive reading denote the same object: there is no
+  least-versus-greatest choice to make.
+\end{theorem}
+\begin{proof}
+  By Lemma~\ref{lem:guarded}, $\Psi$ is a contraction on the complete metric space $(X \to D, \mathrm{d})$
+  (Proposition~\ref{prop:metric}); by the Banach fixed-point theorem \citeTODO{banach} it has a unique
+  fixpoint $r$, and $\Psi^{k}(g_0) \to r$ from every starting point $g_0$.
+
+  \emph{(1)} Take $g_0 = \lambda n.\,\bot_D$. The iterates $\Psi^{k}(g_0)$ are $\sqsubseteq$-increasing
+  ($\Psi$ is monotone and $g_0$ is least) and converge to $r$ in $\mathrm{d}$; the $\mathrm{d}$-limit of a
+  $\sqsubseteq$-increasing sequence is its least upper bound (Proposition~\ref{prop:metric}), so
+  $\bigsqcup_{k} \Psi^{k}(g_0) = r$, which by $\omega$-continuity is $\operatorname{lfp}(\Psi)$. Thus
+  $\operatorname{lfp}(\Psi) = r$.
+
+  \emph{(2)} A function $g$ is a fixpoint of $\Psi$ iff $g(n) = \sigma(g(n_1),\dots,g(n_k))$ whenever
+  $\outm(n)$ exposes $\sigma(n_1,\dots,n_k)$ and $g(n) = \bot$ when $\outm(n) = \bot$, which is exactly
+  the equation defining the $\Beh$-coalgebra morphism $X \to \nu\Beh$ over $\outm$. By finality that
+  morphism $\behav$ exists and is the unique such; being a fixpoint of $\Psi$, it equals $r$.
+
+  Therefore $\operatorname{lfp}(\Psi) = r = \behav$.
+\end{proof}
+
+\begin{remark}[Algebraic compactness]\label{rem:compact}
+  Theorem~\ref{thm:unique} is the operational face of a categorical fact. Over a \emph{discrete} carrier
+  the initial $\Beh$-algebra and the final $\Beh$-coalgebra differ, $\mu\Beh \neq \nu\Beh$ (for the
+  stream functor, the finite lists versus the finite-or-infinite ones), so there least and greatest
+  fixpoint genuinely diverge. The behaviour functional instead lives over the $\bot$-completed tree domain $D$, where a
+  locally continuous functor is \emph{algebraically compact}, $\mu\Beh \cong \nu\Beh$
+  \citeTODO{smyth-plotkin, freyd}, and the unique fixpoint of Theorem~\ref{thm:unique} is that one
+  common object. So ``least equals greatest'' is a property of the $\bot$-completion and the guarded
+  behaviour functional, \emph{not} of the discrete signature: completing with $\bot$ and reading guardedly is exactly
+  what collapses induction and coinduction.
+\end{remark}
+
+\begin{remark}[The parameter is the approximation order; the result is about computable ADTs]\label{rem:metalanguage}
+  What forces the unique fixpoint of Theorem~\ref{thm:unique} is the \emph{approximation order} on terms
+  (Definition~\ref{def:order}, equivalently its metric, Definition~\ref{def:metric}), under which the
+  guarded behaviour functional is a contraction; the iteration plays no role. This order is intrinsic to the
+  \emph{signature}, not to the $\lambda$-calculus: the Scott encoding supplies it automatically at the
+  implementation level (a constructor is observed, a divergence is $\bot$), but it can be defined
+  directly, with no reference to $\lambda$-terms, as the ideal completion of the finite partial
+  $\Sigma$-trees. Fixing it determines at once the order and the unique fixpoint of \emph{every} data
+  structure the calculus describes: a structure presented by a $\lambda$-term \emph{is} the tree read off
+  $\outm$, so it inherits both. Theorem~\ref{thm:unique} is therefore not really about the
+  $\lambda$-calculus. For any finitary signature $F$, every computable abstract data type, taken with its
+  approximation order, has a unique fixpoint, its initial algebra and final coalgebra coinciding
+  (Remark~\ref{rem:compact}); the $\lambda$-calculus is one realization of that order, not its source.
+  One never designates an iteration operator or selects a least solution \emph{for the data}; the least
+  fixpoint survives only one level down, in the evaluation, where the silent collapse gives a divergent
+  computation its forced value $\bot$ (Remark~\ref{rem:leastessential}).
+\end{remark}
+
+\begin{remark}[Where the least fixpoint is indispensable]\label{rem:leastessential}
+  Uniqueness is a property of the behaviour functional, after $\outm$ has exposed a constructor. The structure map
+  $\outm = \iter{\stepm}$ itself is \emph{unguarded}: a silent cycle returns with no constructor exposed,
+  so its defining operator (Definition~\ref{def:out}) is not contractive, and there least genuinely
+  differs from greatest. The least choice is the correct and the only computable one: $\Omega$ has
+  $\outm(\Omega) = \bot$ (least), whereas a greatest reading would assign it an arbitrary non-$\bot$
+  shape. So the construction is least-fixpoint throughout, and the single place the choice does real work
+  is the collapse of divergence to $\bot$; once a layer is exposed, the behaviour functional is guarded and least
+  equals greatest.
+\end{remark}
+
+% =====================================================================
+\section{Bridge: head normalisation is an equation morphism}\label{sec:bridge}
+% =====================================================================
+Head normalisation of the pure $\lambda$-calculus is the instance $M = \Delaym$ (pure divergence,
+Example~\ref{ex:effects}) with $F$ the $\lambda$-shape signature. It is the instance that bears out the
+opening claim, so we give it in full; everything specialises the general development.
+
+\begin{definition}[The $\lambda$-shape signature]\label{def:lamsig}
+  States are pure $\lambda$-terms in de Bruijn form (no $\alpha$-renaming), interned so that
+  structurally equal terms are one state. The signature is
+  \[
+    F X = \big\{\Varsh_i\big\}_{i\in\mathbb{N}} \;+\; \big\{\Lamsh(x)\big\}_{x\in X} \;+\; \big\{\Appsh(x,x')\big\}_{x,x'\in X},
+  \]
+  a nullary $\Varsh_i$ per de Bruijn index, a unary $\Lamsh$, a binary $\Appsh$. There is \emph{no}
+  recursion binder; the repetition that tabling folds is produced by ordinary terms such as the
+  $Y$ combinator.
+\end{definition}
+
+\begin{definition}[Weak-head reduction as the equation morphism]\label{def:shbridge}
+  The equation morphism $\stepm \colon X \to \Delaym(F X + X)$ is weak-head reduction:
+  \[
+    \stepm(M) =
+    \begin{cases}
+      \mathrm{now}\,\mathrm{inl}(\Varsh_i) & M = \Varsh_i\\
+      \mathrm{now}\,\mathrm{inl}(\Lamsh(N)) & M = \Lamsh(\lambda x.N)\\
+      \mathrm{now}\,\mathrm{inr}\big(\mathit{body}[x\mathbin{:=}a]\big) & M = \Appsh(f,a),\ f \text{ exposes } \Lamsh(\lambda x.\mathit{body})\\
+      \mathrm{now}\,\mathrm{inl}(\Appsh(f,a)) & M = \Appsh(f,a),\ f \text{ exposes a rigid head.}
+    \end{cases}
+  \]
+  A head redex is a silent step ($\mathrm{inr}$, contract and continue); a variable, an abstraction,
+  or an application with rigid head exposes a layer ($\mathrm{inl}$). The head $f$ is inspected through
+  its own structure map $\outm(f)$, so the clauses are mutually recursive through $\outm$, exactly the
+  silent iteration of Definition~\ref{def:out}.
+\end{definition}
+
+\begin{proposition}[The weak-head structure map is the weak-head shape]\label{prop:shisout}
+  For this $\stepm$, the structure map $\outm = \iter{\stepm}$ (Definition~\ref{def:out}) is the
+  weak-head shape relation $\Sh$: $\outm(M)$ is the outermost constructor of $M$ after weak head
+  reduction, and $\outm(M) = \bot$ exactly when weak head reduction of $M$ does not terminate. The
+  behaviour $\behav$ (Definition~\ref{def:behreadout}) is the L\'evy--Longo tree. Taking the structure
+  map to be head reduction \emph{under} $\lambda$ instead, a ``$\lambda$'' over a body with no head
+  normal form being itself $\bot$, gives the B\"ohm tree (Remark~\ref{rem:boehm}). Proof: specialise
+  Propositions~\ref{prop:outwd}, \ref{prop:cpo} and Theorem~\ref{thm:adequacy} to $M = \Delaym$.
+\end{proposition}
+
+\begin{remark}[Both readings, same convergence]\label{rem:boehm}
+  The weak-head and head structure maps are two instances over the one carrier, the one tabling, and
+  the one behaviour map, differing only in the $\lambda$ clause. They terminate on exactly the same terms:
+  head reduction performs eagerly, along the head spine, the very weak-head reductions the L\'evy--Longo
+  behaviour computation performs lazily down the $\lambda$-spine, so the reachable nodes and the reductions coincide.
+  They differ only denotationally, at a $\lambda$ whose body has no head normal form: L\'evy--Longo
+  keeps it (reading $\lambda x.\,\Omega$ as $\lambda x.\,\bot$), B\"ohm bottoms the whole term (reading
+  it as $\bot$). The choice of normalisation is therefore denotational, not a difference in
+  convergence. The accompanying implementation\anon[~(supplementary
+  material)]{~\cite{colambda}} realises both as least-fixpoint structure maps over the one
+  carrier and the one behaviour map, and checks both facts: $\lambda x.\,\Omega$ reads out as
+  $\lambda x.\,\bot$ under weak head and as $\bot$ under head, while both readings terminate on the same
+  terms and diverge on the same non-rational stream.
+\end{remark}
+
+\begin{example}[Guarded: the cyclic stream $Y\,(\mathtt{cons}\;0)$]\label{ex:cons}
+  Write $r = \mathtt{cons}\;0\;r$ as $Y\,(\mathtt{cons}\;0)$, with the Scott encoding
+  $\mathtt{cons} = \lambda h.\lambda t.\lambda c.\lambda n.\,c\,h\,t$. Then $\outm(r)$ exposes
+  $\lambda c.\lambda n.\,c\,0\,r'$ in finitely many silent steps without re-requiring $\outm(r)$: the
+  recursive occurrence enters only as data. The repeating cell is one interned state, so tabling
+  folds at the guarded re-entry,
+  \[
+    \rho \;=\; \lambda c.\,\lambda n.\,(c\cdot 0)\cdot\rho,
+  \]
+  the finite representation of the rational L\'evy--Longo tree
+  $\lambda c.\lambda n.\,(c\,0)\,(\lambda c.\lambda n.\,(c\,0)\,(\cdots))$, a node pointing to itself,
+  where head reduction unfolds forever. No recursion binder is needed; $Y$ produces the repetition that
+  tabling folds.
+\end{example}
+
+\begin{example}[Unproductive: $\Omega$ and $Y\,(\lambda x.x)$]\label{ex:xx}
+  $\Omega = (\lambda x.x\,x)(\lambda x.x\,x)$ steps to itself with no constructor exposed, returning to
+  the same interned state; the silent collapse $\outm(\Omega)$ has nothing to expose, so $\outm(\Omega)
+  = \bot$ and $\Omega$ reads out as $\bot$, decided in finite time where reduction loops. The same holds
+  for $Y\,(\lambda x.x)$, the pure-$\lambda$ rendering of $\mathtt{letrec}\;x = x$.
+\end{example}
+
+\begin{remark}[Where this gains over call-by-need]\label{rem:callbyneed}
+Lazy (call-by-need) evaluation memoises only thunks that are aliased in the heap, so it folds a
+recurrence only when the recurring subterm is physically the same cell. On a term with a finite normal
+form it then agrees with the tabling on the value and differs only in cost: the tabling identifies
+subcomputations that are structurally equal yet separately built, collapsing for instance the
+exponential edit-distance recursion to its $O(mn)$ distinct suffix pairs, the dynamic-programming
+table, with no memoisation written. The gain in convergence is elsewhere. On a behaviour that is
+infinite yet reaches finitely many states, such as $Y\,(\mathtt{cons}\;0)$ (Example~\ref{ex:cons}) or
+$\mathtt{map}\,\mathtt{succ}\,(Y\,(\mathtt{cons}\;0))$, whose rebuilt spine shares no cell with its
+source, call-by-need diverges while the tabling returns the finite cyclic graph; and on an
+unproductive term such as $\Omega$ (Example~\ref{ex:xx}) the tabling decides $\bot$ in finite time
+where call-by-need loops. This gain is exactly a decidable fragment of the rational ceiling of
+Theorem~\ref{thm:optimal}: the tabling on structural identity halts on the behaviours that reach
+finitely many states, and the residual gap to the full rational ceiling is undecidable
+(Remark~\ref{rem:semidec}).
+\end{remark}
+
+% =====================================================================
+\section{Applications}\label{sec:application}
+% =====================================================================
+\subsection{Decidability and dissolved problems}\label{sec:variants}
+On the rational fragment the behaviour is a finite graph, so its equality is decidable, and a cluster
+of problems that need added machinery in other settings does not arise.
+
+\begin{corollary}[Decidable behaviour equality on the rational fragment]\label{cor:decidable}
+  Restricted to states from which finitely many states are reachable (Theorem~\ref{thm:termination}),
+  equality of behaviours $\behav(x) = \behav(y)$ is decidable. Each is presented by a finite cyclic
+  graph; the graphs are computable, since the silent collapse terminates at each reached state
+  (Proposition~\ref{prop:outwd}) and the reachable states close after finitely many steps, while state
+  identity is decidable (structural equality of states). Equality of two rational graphs is then decided
+  by the standard cycle-detecting bisimulation \citeTODO{courcelle}.
+\end{corollary}
+
+\begin{corollary}[Hard problems dissolved]\label{cor:dissolved}
+  Several problems that need added machinery elsewhere do not arise here. Observing sharing or cyclicity
+  in a pure language needs an observable-sharing primitive or a circular-program idiom
+  \citeTODO{gill, bird}; here sharing is state identity. Representing a cyclic structure needs an
+  explicit recursion binder or a cyclic $\lambda$-calculus \citeTODO{ariola-klop}; here the equation
+  morphism generates the repetition and tabling folds it, with no binder added
+  (Section~\ref{sec:bridge}). Deciding equality over cyclic structures needs a separate unification
+  discipline or recursive-type system \citeTODO{colmerauer, amadio-cardelli, brandt-henglein}; here it
+  is cycle detection over states (Corollary~\ref{cor:decidable}). Terminating a recursive query over a
+  cyclic datum needs a tabled evaluator \citeTODO{tamaki-sato, tabling-slg}; here the query's own
+  recurrences fall into the same states and fold (Section~\ref{sec:reach}).
+\end{corollary}
+
+\subsection{Structural computation over cyclic data}\label{sec:reach}
+Constructing the cyclic datum is already the new step. The pure term $Y\,(\mathtt{cons}\;0)$ denotes
+the infinite stream $\mathtt{cons}\;0\;(\mathtt{cons}\;0\;\cdots)$, with no finite form under head
+reduction; up to identity it has finitely many states, so tabling $\outm$ gives it a finite
+\emph{circular} representation, a cell whose tail points back to itself (Example~\ref{ex:cons}). A
+circular linked list from a pure $\lambda$-term is what the standard semantics cannot build.
+
+A recursive query over that datum is an ordinary $\lambda$-function, and the guarded/unproductive
+split of Definition~\ref{def:guarded} governs the \emph{query} as it governs the data. The na\"ive
+walk
+\[
+  \mathtt{reach} \;=\; Y\,\big(\lambda\mathit{self}.\,\lambda\mathit{lst}.\;
+  \mathit{lst}\;(\lambda h.\lambda t.\,\mathit{self}\;t)\;\present\big)
+\]
+recurses down a Scott stream looking for $\mathtt{nil}$. Applied to $r = \mathtt{cons}\;0\;r$, each
+recursive call builds $\mathtt{reach}\;t$; because $r$ has finitely many states, these fall into
+finitely many states, so tabling folds the recursion. Head reduction, which remembers nothing,
+builds a fresh application at every step and diverges; tabling folds at the repeated state and
+returns a definite value (here $\bot$: no $\mathtt{nil}$ is reached, so the walk is itself an
+unproductive cycle), in finite time. It is memoised for free, since identical states share their
+subcomputations.
+
+\paragraph{Mapping a cyclic list}
+The guarded arm produces rather than decides. The textbook
+$\mathtt{map}\,f = Y\,(\lambda\mathit{self}.\,\lambda\mathit{lst}.\;\mathit{lst}\;
+(\lambda h.\lambda t.\,\mathtt{cons}\;(f\,h)\;(\mathit{self}\;t))\;\mathtt{nil})$ has nothing
+cycle-aware in it. Its recursive call sits under a $\mathtt{cons}$, so it is guarded: applied to
+$r = \mathtt{cons}\;0\;r$, the recursive application $\mathtt{map}\,f\;t$ re-enters the same state
+$\mathtt{map}\,f\;r$, and tabling folds it. The result is a finite circular list
+$\rho = \mathtt{cons}\;(f\,0)\;\rho$, every element transformed, where head reduction would map the
+infinite stream forever. The fold is lazy knot-tying: each cell is registered before its tail is
+recursed into, so the table supplies the back edge. On a finite list the same $\mathtt{map}$ is the
+ordinary one. The implementation\anon[~(supplementary material)]{~\cite{colambda}} reproduces
+both arms.
+
+\subsection{Memoising arbitrary programs}\label{sec:memo}
+More generally, $\behav$ is the denotation of a \emph{memoised} run of any program over the states.
+Memoisation needs a comparable key on which to recognise a repeated call; first-order states supply
+one, higher-order values do not (value equality of functions is undecidable). The tabling that computes the behaviour
+is that memoisation: it is what lets a re-entry be recognised at all. Head reduction, which remembers
+nothing, unfolds a cyclic state forever; tabling $\outm$ recognises the re-entry and folds. The two
+are the unfolding and its limit, separated by how much they remember.
+
+% =====================================================================
+\section{Related work}\label{sec:related}
+% =====================================================================
+\paragraph{Coalgebra, final semantics, and rational fixpoints.}
+Reading behaviour as the unique map into a final coalgebra is the coalgebraic method
+\citeTODO{rutten, jacobs}; the finite cyclic graphs are the rational fixpoint between the initial
+algebra and the final coalgebra \citeTODO{adamek-milius-velebil-rational}. Partition refinement
+\citeTODO{hopcroft, paige-tarjan}, and its generic coalgebraic form CoPaR \citeTODO{copar,
+wissmann-modular-partition-refinement} for any zippable functor on $\mathbf{Set}$, solves a different
+problem: it is \emph{given} a finite coalgebra and \emph{minimises} it, quotienting its states by
+behavioural equivalence (the coarsest bisimulation, the kernel of the map into the final coalgebra),
+a comparison among the states of an already-given system. We do not minimise or compare two systems; we
+\emph{solve} one: a $\lambda$-term is read as a coalgebraic equation, and we compute its solution, and on
+the rational fragment a finite representation of that one solution. The only equality we use is
+\emph{structural identity} of nodes \emph{within that single solution}, and only to recognise a
+re-entrant cycle and tie a back edge (decidable because the nodes are first-order,
+Section~\ref{sec:intro}); we never quotient by behavioural equivalence, which on $\lambda$-terms would be
+B\"ohm-tree equality and is undecidable. The two tasks are orthogonal and could compose: CoPaR could
+minimise the finite graph we produce. Our behaviour, finally, is the first-order $\Sigma$-tree a state
+unfolds to, not the extensional behaviour of a higher-order value.
+
+\paragraph{Iteration, the delay monad, and Elgot monads.}
+Iteration in a (complete) Elgot monad
+\citeTODO{adamek-milius-velebil, goncharov-elgot} solves guarded recursion abstractly, and for
+$M = \Delaym$ the delay/partiality monad \citeTODO{capretta} makes divergence a value; but these
+accounts fix the value categorically and neither compute it nor give it a finite representation on
+the rational fragment. Generalised resumption monads $M(F(-) + -)$ \citeTODO{piróg-gibbons} supply the
+type of such systems but no procedure over them.
+
+\paragraph{Least Herbrand models and tabling.}
+The least fixpoint of a monotone consequence operator is the least Herbrand
+model of a definite specification \citeTODO{vanemden-kowalski}; plain resolution diverges on a cyclic
+query, whereas a tabled evaluator \citeTODO{tamaki-sato, tabling-slg} computes the least fixpoint by
+completing unproductive cycles instead of looping. Tabling has also been extended to store rational
+(cyclic) terms under a canonical representation and to drive coinductive logic programming
+\citeTODO{mantadelis-rocha-moura}, but there the cyclic term is already produced by occurs-check-free
+unification. In all of these, tabling stays within logic programming and is not carried to an arbitrary
+signature functor.
+
+\paragraph{Rational trees and recursive types.}
+Deciding structural queries over cyclic structures by cycle detection is long established: rational
+(regular) trees and their algebra \citeTODO{courcelle} underlie cyclic unification
+\citeTODO{colmerauer}, and equirecursive recursive types give terminating subtyping and equality by
+detecting cycles in a regular tree \citeTODO{amadio-cardelli, brandt-henglein}. Each, however, handles
+only the guarded-cycle case and is a separate discipline tied to one domain, unification or subtyping,
+not a single uniform construction.
+
+\paragraph{$\lambda$-trees and infinitary $\lambda$-calculus.}
+The Berarducci, L\'evy--Longo, and B\"ohm trees form a hierarchy by their meaningless sets
+\citeTODO{berarducci, levy-longo, barendregt}, situated uniformly by the infinitary
+$\lambda$-calculus \citeTODO{kennaway-klop-sleep-devries}; they are studied as infinite normal forms,
+with no finite representation of the rational ones. The Berarducci tree retains $\bot$-headed
+applications and is non-monotone, so it admits no least-fixpoint presentation. The lazy
+$\lambda$-calculus \citeTODO{abramsky-ong} observes weak head normal forms but does not fold the trees
+it produces.
+
+\paragraph{Cyclic $\lambda$-terms, sharing, and recursion.}
+Graph reduction \citeTODO{wadsworth, turner-combinators} evaluates $\lambda$-terms over (possibly
+cyclic) graphs, and term graph rewriting \citeTODO{barendregt-term-graph, kennaway-graph-adequacy}
+relates finite cyclic graphs to the rational trees they unfold to; but a cycle is tied only where
+recursion is primitive, a \texttt{letrec} or a built-in fixpoint, whereas a pure fixpoint combinator
+has its body copied at each $\beta$-step and unfolds into an unbounded spine. Cyclic graphs / explicit
+recursion \citeTODO{ariola-klop} and call-by-need \citeTODO{ariola-felleisen} likewise provide sharing
+only as an added construct, and a pure functional language cannot even observe sharing or cyclicity
+without an addition such as observable sharing \citeTODO{gill} or a circular-program idiom
+\citeTODO{bird}. Across all of these, an ordinary recursive function over a cyclic list, such as a
+$\mathtt{map}$, reduces to an unbounded spine rather than to a cycle.
+
+\paragraph{Higher-order model checking and defunctionalization.}
+Deciding properties of trees generated by higher-order programs \citeTODO{ong-hors, kobayashi}
+answers queries about $\lambda$-generated infinite trees, but proceeds by automata and games over
+B\"ohm-tree-like denotations and produces no finite representation of the tree itself.
+Defunctionalization \citeTODO{reynolds} compiles a higher-order program into a first-order
+interpreter, a syntactic translation that yields no semantic \emph{object}.
+
+\paragraph{A common limitation.}
+Terminating structural computation over cyclic data by cycle detection is decades old in logic
+programming \citeTODO{colmerauer, tamaki-sato} and recursive-type theory \citeTODO{amadio-cardelli,
+brandt-henglein}, but in every case it is confined to one domain and applies only to data already
+presented in cyclic form; none reads it as the behaviour of an arbitrary system, and none folds a pure
+term that merely generates the cycle.
+
+% =====================================================================
+\section{Conclusion}\label{sec:conclusion}
+% =====================================================================
+The behaviour of an equation morphism is read by tabling a one-step structure map, the structure map
+itself the least fixpoint of the silent iteration. The unfolding diverges on a cyclic state; tabling
+that map on first-order state identity folds a guarded cycle into a finite graph and decides an
+unproductive cycle as $\bot$, both in finite time on the rational fragment. Head normalisation of
+the pure $\lambda$-calculus is one instance, the one that shows a pure term can carry and compute over
+cyclic data with nothing added to the calculus. The two parameters, the effect monad of the internal
+process and the signature of the exposed layer, range over deterministic, non-deterministic,
+probabilistic, and stateful processes alike.
+
+% =====================================================================
+\appendix
+\section{The behaviour domain (Proposition~\ref{prop:cpo})}\label{app:domain}
+\begin{proof}[Proof of Proposition~\ref{prop:cpo}]
+  \emph{Least element.} For any $t \in D$, $\mathrm{dom}(\bot_D) = \{\varepsilon\} \subseteq
+  \mathrm{dom}(t)$ and $\bot_D(\varepsilon) = \bot$, so $\bot_D \sqsubseteq t$ by
+  Definition~\ref{def:order}.
+
+  \emph{Directed completeness.} Let $\{t_i\}_{i\in I}$ be $\sqsubseteq$-directed. Define $t$ by
+  $\mathrm{dom}(t) = \bigcup_i \mathrm{dom}(t_i)$ and $t(p) = t_i(p)$ for any $i$ with
+  $t_i(p) \neq \bot$, else $t(p) = \bot$. This is well-defined: if $t_i(p) \neq \bot \neq t_j(p)$,
+  directedness gives $t_\ell \sqsupseteq t_i, t_j$, and a non-$\bot$ label is preserved upward
+  (Definition~\ref{def:order}), so $t_i(p) = t_\ell(p) = t_j(p)$. And $t \in D$: $\mathrm{dom}(t)$ is
+  prefix-closed as a union of prefix-closed sets, and arity-respecting because a non-$\bot$ label at $p$
+  agrees with some $t_i$, whose children of $p$ are exactly those the label prescribes, and $\bot$ has
+  no children. Finally $t = \bigsqcup_i t_i$: each $t_i \sqsubseteq t$, and any upper bound $u$ has
+  $t \sqsubseteq u$, since at $p$ with $t(p) \neq \bot$ the witnessing $t_i$ gives
+  $t(p) = t_i(p) = u(p)$. The $M$-structure at each node is completed $M$-pointwise, where $M A$ is a
+  pointed $\omega$-CPO by Definition~\ref{def:elgot}. In particular every $\omega$-chain has a least
+  upper bound.
+\end{proof}
+
+\section{The structure map (Proposition~\ref{prop:outwd})}\label{app:out}
+\begin{proof}[Proof of Proposition~\ref{prop:outwd}]
+  Write $\Phi$ for the operator of Definition~\ref{def:out}, on $X \to M(F X)$ ordered pointwise over
+  the $\omega$-CPO structure of $M(F X)$ (Definition~\ref{def:elgot}).
+
+  \emph{Monotone and continuous.} $\Phi(g)(x) = \big([\,\eta\circ\mathrm{inl},\,g\,]^{*}\big)(\stepm(x))$
+  is built from $\stepm(x)$ (a constant in $g$) by Kleisli extension of $[\eta\circ\mathrm{inl}, g]$,
+  which depends on $g$ only through the $\mathrm{inr}$ branch and is $\omega$-continuous in $g$ because
+  $(-)^{*}$ and copairing are $\omega$-continuous (Definition~\ref{def:elgot}). Hence $\Phi$ is
+  $\omega$-continuous, and by Kleene $\outm = \bigsqcup_k \Phi^k(\lambda x.\,\bot)$ is its least
+  fixpoint.
+
+  \emph{Characterisation.} The iterates resolve layers by running silent steps: $\Phi^k(\bot)(x) \neq
+  \bot$ iff the silent process from $x$ exposes an $\mathrm{inl}$ layer within $k$ steps. \TODO{spell out
+    the step measure: an induction on $k$ matching ``$\Phi^k(\bot)(x) \neq \bot$'' with ``$x$ exposes a
+    layer within $k$ silent steps'', concluding $\outm(x) = \bot$ iff the silent process from $x$ exposes
+  no layer. The statement and both endpoints are fixed; only the bookkeeping of the measure remains.}
+  For $M = \Delaym$ this says $\outm(x) = \bot$ exactly when weak head reduction does not terminate
+  (Proposition~\ref{prop:shisout}).
+\end{proof}
+
+\section{Adequacy (Theorem~\ref{thm:adequacy})}\label{app:adequacy}
+\begin{lemma}[Meaningless leaves]\label{lem:rootactive}
+  $\outm(x) = \bot$ iff the behaviour at $x$ is the $\bot$ leaf.
+\end{lemma}
+\noindent
+By Proposition~\ref{prop:outwd}, $\outm(x) = \bot$ iff the silent process from $x$ exposes no layer.
+The graph's $\bot$ leaf is by Definition~\ref{def:reach} exactly such a state, so the identification is
+immediate.
+
+\begin{proof}[Proof of Theorem~\ref{thm:adequacy}]
+  The structure map $\outm$ (Definition~\ref{def:out}) is a $\Beh$-coalgebra $X \to \Beh X$, $\Beh = MF$
+  (Definition~\ref{def:behfun}); the graph $(R(M),\outm)$ is its restriction to the reachable states. By
+  finality there is a unique $\Beh$-coalgebra morphism $\behav \colon X \to \nu\Beh$, determined layer
+  for layer by $\outm$: $\behav(x)$ exposes the layer $\outm(x)$ with children $\behav$ of the successor
+  states, or the $\bot$ leaf when $\outm(x) = \bot$ (Lemma~\ref{lem:rootactive}). Since
+  $\outm = \iter{\stepm}$ runs the silent steps of $\stepm$ (Proposition~\ref{prop:outwd}), $\behav$ is
+  the behaviour of $\stepm$ up to silent steps, and the graph $(R(M),\outm)$, whose unfolding is
+  $\behav(M)$, is its finite presentation.
+\end{proof}
+
+\section{Termination (Theorem~\ref{thm:termination})}\label{app:termination}
+\begin{proof}[Proof of Theorem~\ref{thm:termination}]
+  Tabling descends only through reachable states (Definition~\ref{def:reach}): the children of an
+  exposed layer and, via the silent steps of $\outm$, the silent successors. State equality is decidable,
+  so the tabling key is testable.
+
+  \emph{Finite $\Rightarrow$ halts.} If $R(M)$ is finite, tabling $\outm$ visits a finite set and halts:
+  the silent collapse $\outm(x)$ saturates each finite silent orbit, and the reachable closure saturates
+  $R(M)$.
+
+  \emph{Halts $\Rightarrow$ finite.} Contrapositive: if $R(M)$ is infinite, the descent visits
+  infinitely many distinct states and the tabling never saturates.
+
+  \emph{Graph rational.} When $R(M)$ is finite, $(R(M),\outm)$ is a finite graph; its unfolding has
+  subtrees $\{\behav(y) : y \in R(M)\}$, finite, so it lies in $\rfp\Beh$
+  (Definition~\ref{def:rational}).
+
+  \emph{Two conditions.} The two halts above are independent (Remark~\ref{rem:tworationalities}): the
+  silent orbit of a state may be infinite while $R(M)$ is finite, or conversely.
+\end{proof}
+
+% =====================================================================
+\section{The Rational Fragment as a Domain-Specific Language}\label{app:dsl}
+The terminating fragment of the construction, the rational behaviours, is exactly the world of
+finite-state, regular, and least-fixpoint-over-a-finite-lattice computation, and a range of
+practical domains live there. Each domain below is a pure $\lambda$-term whose behaviour is
+rational, so the interpreter halts, and each is reproduced as a test\anon[~(supplementary
+material)]{~\cite{colambda}}. Two reusable shapes recur: a least fixpoint over a Church
+tuple of booleans (the Datalog engine of Section~\ref{sec:application}), and a recursion whose
+subproblems are the nodes of a first-order datum, memoised for free because identical subproblems
+are one interned state. Each claim is confined to a domain's rational core: regular lexing but not
+general context-free parsing, rational-tree unification but not a general most-general unifier,
+finite-state model checking but not infinite-state. The terms below are the actual encodings; the
+Booleans are Church, $\mathtt{T} = \lambda a.\lambda b.\,a$ and $\mathtt{F} = \lambda a.\lambda b.\,b$,
+with $\mathtt{or} = \lambda p.\lambda q.\,p\,\mathtt{T}\,q$ and
+$\mathtt{and} = \lambda p.\lambda q.\,p\,q\,\mathtt{F}$, and $\mathtt{cons}$ and $Y$ are as in
+Section~\ref{sec:bridge}.
+
+\paragraph{Dynamic programming, memoisation for free.}
+The decisive capability is memoisation (Section~\ref{sec:memo}): a recursion whose state space is a
+tree or graph computes each distinct subproblem once, because a structurally repeated subtree, or a
+graph node revisited along several paths, is one interned state. A perfect binary tree of depth $n$
+whose nodes share both children is a graph of $n+1$ states that unfolds to $2^{n}$ leaves; a tree
+DP over it is read in time linear in $n$, where a naive recursion would visit $2^{n}$ leaves. No
+memo table is written; tabling on first-order state identity is the memoisation, which the pure
+$\lambda$-calculus lacks without a decidable identity on subproblems, value equality of closures
+being undecidable.
+\[
+  \mathtt{node} = \lambda l.\lambda r.\lambda m.\lambda f.\,m\,l\,r, \qquad
+  \mathtt{leaf} = \lambda v.\lambda m.\lambda f.\,f\,v,
+\]
+\[
+  \mathtt{any} = Y\,\big(\lambda\mathit{self}.\lambda t.\;
+  t\,(\lambda l.\lambda r.\,\mathtt{or}\,(\mathit{self}\,l)\,(\mathit{self}\,r))\,(\lambda v.\,v)\big),
+  \qquad t_0 = \mathtt{leaf}\;\mathtt{F},\quad t_{k+1} = \mathtt{node}\;t_k\;t_k,
+\]
+so $\mathtt{any}\,t_n$ reads to $\mathtt{F}$ with each of the $n+1$ shared subtrees evaluated once.
+
+\paragraph{Game search with a transposition table.}
+Minimax is an and-or tree: a maximising position takes the disjunction over its moves, a minimising
+position the conjunction, and a terminal position a Boolean. A \emph{transposition}, the same
+position reached by a different move order, is the same interned node, so its value is computed
+once. Interning is the transposition table of a game-playing program, with no table written by hand.
+\[
+  \mathtt{max} = \lambda l.\lambda r.\lambda x.\lambda n.\lambda f.\,x\,l\,r, \quad
+  \mathtt{min} = \lambda l.\lambda r.\lambda x.\lambda n.\lambda f.\,n\,l\,r, \quad
+  \mathtt{leaf} = \lambda v.\lambda x.\lambda n.\lambda f.\,f\,v,
+\]
+\[
+  \mathtt{value} = Y\,\big(\lambda\mathit{self}.\lambda p.\;
+    p\,(\lambda l.\lambda r.\,\mathtt{or}\,(\mathit{self}\,l)(\mathit{self}\,r))\,
+  (\lambda l.\lambda r.\,\mathtt{and}\,(\mathit{self}\,l)(\mathit{self}\,r))\,(\lambda v.\,v)\big).
+\]
+
+\paragraph{Graph reachability and program analysis.}
+Reachability and transitive closure over a directed graph, including one with cycles, are the least
+fixpoint of the immediate-consequence operator, terminating because the lattice is finite; the same
+shape decides reachability of a state in a finite transition system. Andersen-style points-to (alias)
+analysis \citeTODO{andersen, doop}, in which $\mathtt{pointsTo}(p,o)$ follows from
+$\mathtt{assign}(p,q)$ and $\mathtt{pointsTo}(q,o)$, is monotone Datalog, and a compiler reads it as
+the same boolean fixpoint. The cyclic graph $a\to b\to c\to a$ with $c\to d$, and the points-to
+program for $a=\mathtt{new}\,o_1;\,b=a;\,c=b$, are the clause sets
+\[
+  \begin{aligned}
+    &\mathtt{reach}(a),\quad \mathtt{reach}(b)\leftarrow\mathtt{reach}(a),\quad
+    \mathtt{reach}(c)\leftarrow\mathtt{reach}(b),\\
+    &\mathtt{reach}(a)\leftarrow\mathtt{reach}(c),\quad \mathtt{reach}(d)\leftarrow\mathtt{reach}(c);\\
+    &\mathtt{pt}(a,o_1),\quad \mathtt{pt}(b,X)\leftarrow\mathtt{pt}(a,X),\quad
+    \mathtt{pt}(c,X)\leftarrow\mathtt{pt}(b,X),
+  \end{aligned}
+\]
+so $\mathtt{reach}(d)$ and $\mathtt{pt}(c,o_1)$ hold while $\mathtt{reach}(e)$ and $\mathtt{pt}(c,o_2)$
+do not.
+
+\paragraph{Lexical analysis.}
+A deterministic finite automaton is a finite cyclic transition graph, and running it is a fold over
+the input that threads the state. Regular languages are the archetypal rational behaviour, so a lexer
+is a $\lambda$-term whose behaviour is rational; the name \emph{rational} is itself the regular, or
+Kleene, sense (Definition~\ref{def:rational}). Encoding the even state and the symbol $a$ as
+$\mathtt{T}$, and the odd state and $b$ as $\mathtt{F}$, both two-way selectors,
+\[
+  \delta = \lambda s.\lambda x.\,s\,(x\,\mathtt{F}\,\mathtt{T})\,(x\,\mathtt{T}\,\mathtt{F}), \qquad
+  \mathtt{accepts} = \lambda s.\,s\,\mathtt{T}\,\mathtt{F},
+\]
+\[
+  \mathtt{run} = Y\,\big(\lambda\mathit{self}.\lambda s.\lambda w.\;
+  w\,(\lambda h.\lambda t.\,\mathit{self}\,(\delta\,s\,h)\,t)\,s\big),
+\]
+and $\mathtt{accepts}\,(\mathtt{run}\,\mathtt{T}\,w)$ is $\mathtt{T}$ exactly when $w$ has an even
+number of $a$s.
+
+\paragraph{Unification and recursive types.}
+Equality of two rational (cyclic) terms is decided by their behaviour through cycle-detecting
+bisimulation (Corollary~\ref{cor:decidable}). This is the decidable core shared by rational-tree
+unification \citeTODO{colmerauer} and equirecursive ($\mu$-) type equality
+\citeTODO{amadio-cardelli, brandt-henglein}: two constructions of one rational term read out
+identically, and a different term reads out differently. For instance $Y\,(\mathtt{cons}\;0)$ and
+$Y\,(\lambda s.\,\mathtt{cons}\;0\;s)$ read out identically, while $Y\,(\mathtt{cons}\;1)$ differs.
+
+\paragraph{The metalanguage needs tabling too.}
+The interpreter's own host-language term builder illustrates the point reflexively. Writing a shared
+subterm by reusing a builder gives a term whose construction unfolds the sharing exponentially, and
+a cyclic builder would not terminate, until the builder is memoised by binder depth, the
+host-language analogue of tabling. Intuitive code is slow or non-terminating exactly where the
+metalanguage does not table. The memo key here is the syntactic builder rather than the first-order
+behavioural identity the calculus folds on, but the moral is the same.
+
+\paragraph{Further instances.}
+The same rational core underlies others not reproduced here: equality saturation over e-graphs
+\citeTODO{egg, egglog} and binary decision diagrams \citeTODO{bryant}, both of which are interning
+of a shared graph; garbage-collection reachability over a cyclic heap; abstract interpretation as a
+fixpoint over a finite abstract domain; and, with a non-trivial effect monad, the stationary
+distribution of a finite Markov chain. Each is a finite-state, regular, or finite-lattice-fixpoint
+computation, hence a rational behaviour the construction reads.
+
+% =====================================================================
+\section{Compilation to Python by Analysis-Driven Specialization}\label{app:compiler}
+The interpreter is the default evaluator, and it is already a fixpoint-thunk graph: every node's
+weak head normal form is a \texttt{fixpoint\_cached\_property} thunk, interned and possibly cyclic,
+so the term graph is the thunk graph the interpreter folds, and handing that graph back is the
+identity. A compiler can do something different only by choosing a different evaluation strategy, and
+it preserves the interpreter's result only when an analysis certifies the choice is sound. The
+accompanying implementation\anon[~(supplementary material)]{~\cite{colambda}} carries this
+out as a self-hosting compiler from the pure $\lambda$-calculus to a Python AST that specializes a
+sub-term to a strict or a call-by-name Python target when an analysis certifies the result is
+unchanged, and leaves everything else to the interpreter. Specialization is local, the analysis is
+itself a $\lambda$-term, and a depth bound turns reduction into a family of readings between the raw
+term and the weak head normal form. The pieces below are executable, each reproduced as a test.
+
+\paragraph{The target: a Scott-encoded Python AST.}
+The target is a Python AST represented in the pure $\lambda$-calculus by Scott encoding, a value of
+an $n$-constructor type being $\lambda h_0 \dots h_{n-1}.\,h_{\mathit{tag}}\,\mathit{fields}$. The
+encoding and its decoder are generated by reflection on Python's \texttt{ast} module: the supported
+node classes give the constructors, each class's fields give the arity and order, and a field
+carries a kind tag (a child, a list, an integer, a string as character codes). Real Python
+round-trips through this encoding, a function with a \texttt{while} loop included, and the decoded
+program runs.
+
+\paragraph{The compiler, in the $\lambda$-calculus.}
+A quoted source term is a Scott value over $\mathtt{QVar}\,i$, $\mathtt{QLam}\,b$,
+$\mathtt{QApp}\,f\,a$ (de Bruijn). The compiler is the pure term
+\[
+  \mathtt{compile} = Y\,\big(\lambda\mathit{self}.\lambda d.\lambda q.\;
+    q\,(\lambda i.\,\mathtt{PyVar}\,(d - 1 - i))\,
+    (\lambda b.\,\mathtt{PyLam}\,d\,(\mathit{self}\,(d{+}1)\,b))\,
+  (\lambda f.\lambda a.\,\mathtt{PyApp}\,(\mathit{self}\,d\,f)\,(\mathit{self}\,d\,a))\big),
+\]
+mapping an abstraction to a Python \texttt{lambda}, an application to a call, and a variable to a
+name; it threads the binder depth $d$ so a de Bruijn index $i$ becomes the level $d - 1 - i$
+(Church subtraction), giving stable parameter names. Compiled identity, $K$, Church numerals, and
+arithmetic applications execute in Python and compute what the source terms compute, as the generated
+comparison under \emph{Compiled examples} below shows. The compiler
+emits one of three targets, selected by the analysis below: a strict (eager) target; a call-by-name
+lazy target; and a fixpoint target that is the interpreter itself, since the fixpoint-thunk graph is
+the AST. The eager and lazy targets differ from the interpreter only in evaluation strategy, so they
+are sound only under the conditions the analysis certifies; the lazy target uses a thunk forced on
+reference, the call-by-name semantics matching weak-head reduction, so every normalizing term
+computes its value, factorial and Fibonacci among them. The prelude arithmetic is cross-checked
+against the interpreter on the lazy target.
+
+\paragraph{Compiled examples.}
+Each example below shows the specializer's output: a closed simply-typable term certified to the
+strict call-by-value target, an untypable but normalizing self-application to call-by-need, and a
+fold-requiring cyclic term left to the interpreter with its closed element compiled to a call-by-value
+island. The flagship is the compiler itself. Untypable as a whole, since its fixpoint combinator
+self-applies, it stays interpreted, but the specializer finds its maximal closed simply-typable
+sub-terms, the strongly-normalizing combinators, and compiles each to a strict island, carving
+call-by-value regions out of an otherwise interpreted program. A bound variable is named by a list
+of naturals the compiler emits (the binder depth for the expression targets, the binder's
+syntax-tree path for call-by-need) and a single decoder, shared by every target, renders it as the
+Python identifier \texttt{v} with an underscore-separated integer per segment, so distinct binders
+get distinct names by construction. The listings are generated from the compiler, not written by
+hand, and the compiler's staged self-compilations are committed alongside as generated modules.
+% OUTDATED: the surrounding prose describes the old specializer (islands / three targets).
+% generated/compiler-examples.tex is now produced by the DEFUN compiler instead: each example
+% term is a module of @interned closure classes (regenerate with co-lambda-defun-examples).
+\input{generated/compiler-examples}
+
+\paragraph{The soundness analysis.}
+A static analysis chooses the target. A term that is simply typable, decided by algorithm-W
+inference with an occurs check so the self-application $x\,x$ of $Y$ and $\Omega$ fails, is
+strongly normalizing, so the strict eager target terminates with the interpreter's normal form.
+Otherwise the interpreter serves as a sound oracle: it reads the behaviour out, and if the behaviour
+is a finite normal form (no folded back edge and no $\bot$), the term is normalizing and the
+call-by-name lazy target reaches the same value. Failing both, the term keeps the fixpoint default,
+the interpreter, which folds every rational behaviour correctly. Church arithmetic compiles eager;
+factorial and Fibonacci applied to a numeral compile lazy; $Y\,(\mathtt{cons}\;0)$ and $\Omega$ stay
+interpreted. Simple typability is a sound but conservative certificate, and normalization is
+undecidable, so the lazy test runs the safe interpreter and reads off whether it folded; no totality
+is claimed, and anything the analysis does not certify stays interpreted.
+
+\paragraph{The analysis, in the $\lambda$-calculus.}
+The certificate that selects what to specialize is itself a pure $\lambda$-term, run by the
+interpreter on the quoted program, so the calculus analyzes its own programs. The first and simplest
+is a closedness check
+\[
+  \mathtt{closed} = Y\,\big(\lambda\mathit{self}.\lambda d.\lambda q.\;
+    q\,(\lambda i.\, i < d)\,
+    (\lambda b.\,\mathit{self}\,(d{+}1)\,b)\,
+  (\lambda f.\lambda a.\,\mathit{and}\,(\mathit{self}\,d\,f)\,(\mathit{self}\,d\,a))\big),
+\]
+recursing structurally with $Y$ and threading a Church-numeral binder depth: a variable is in scope
+when its index is below the depth, an abstraction recurses at $d+1$, an application is closed when
+both sides are, with $<$ and $\mathit{and}$ the usual Church encodings. Closedness is exactly the
+precondition a compiled island needs, and richer certificates (rationality by folding, typability)
+layer on in the same style. That the analysis is a $\lambda$-term rather than host code is the point:
+tabling-based reduction expresses program analysis, not only evaluation.
+
+\paragraph{Local specialization through a foreign-function node.}
+Specialization is local, not whole-program: a single node kind embeds a compiled Python callable in
+the term graph, taking argument nodes to a result node, so the node graph is the interoperation
+boundary. A closed sub-term the analysis certifies is compiled once to such a node and spliced into an
+otherwise interpreted graph; the interpreter drives the island and folds around it. In
+$Y\,(\mathtt{cons}\,(3 \times 3))$ the cyclic $\mathtt{cons}$ stays interpreted while the closed
+element compiles to an island, and the readout, a cyclic stream of $9$, is unchanged. A solution
+written once is thus compiled once and run on many $\lambda$-term inputs from the host, inputs and
+results staying $\lambda$ values.
+
+\paragraph{Bootstrap.}
+The fixpoint is the ordinary combinator $Y$: its self-application is untypable and has no finite
+normal form, so the analyses never send the recursion to a compiled target and it stays
+interpreted. The compiler then compiles
+its own source to a Python program, and that self-compiled compiler, evaluated as a Python function
+and run on host-encoded source terms, produces the same output as the original and itself runs.
+
+\paragraph{A weak head and combinatory fusion: depth-bounded reduction.}
+The compiler's reference semantics fuses two reductions. A combinatory (SK) reduction pushes a
+substitution one constructor inward, as an explicit substitution calculus
+does~\citeTODO{abadi-curien-levy, benaissa-lescanne}, instead of copying the whole spine, which is
+efficient, but its $S$ rule, $(\lambda a.\,E_1\,E_2)\,b \to ((\lambda a.\,E_1)\,b)\,((\lambda a.\,E_2)\,b)$,
+turns the argument into suspensions that grow on every turn of a cycle (the sharing problem of
+combinator graph reduction~\citeTODO{wadsworth-graph, lamping}), so the cycle never re-forms one
+interned node and the fold never fires; reducing the suspensions first (call by value) re-forms the node but
+diverges on a productive cycle such as $Y\,(\mathtt{cons}\;0)$. The construction instead takes
+call-by-name beta, where the argument is inserted by reference rather than reduced, so tabling folds
+both $\Omega$ (to $\bot$) and $Y\,(\mathtt{cons}\;0)$ (to a finite cyclic graph), together with a depth
+bound on the substitution that leaves a still-unfired redex $(\lambda a.\,T)\,a$ as a guarded let-stub
+rather than substituting the whole, possibly infinite, tree. Because substitution returns a closed
+subterm by reference, closed cyclic data is shared and only the open redex-body spine is copied, the
+minimal traversal the fold requires. Bounding the reduction gives a family of structure maps between
+the raw term ($d = 0$) and the weak head normal form ($d$ large), with $d = 1$ the one-layer reading;
+growing $d$ climbs the $\bot$-completed approximation order~\citeTODO{barendregt, levy-longo}, whose
+limit is the Levy-Longo reading. So
+the semantics folds the common cycles, as weak head normalization does, while never doing the
+unbounded whole-tree substitution that motivates combinatory reduction.
+
+\paragraph{The halting boundary.}
+Faithfulness is convergence to the unique fixpoint, not structural identity: since the least and
+greatest fixpoints coincide (Theorem~\ref{thm:unique}), an operational strategy is faithful as long
+as it reaches that fixpoint rather than diverging, so a folded cycle may be unrolled into a finite
+tree or reshaped into a different cycle and stay faithful, and the only unfaithful move is unrolling a
+cycle into an infinite tree. This places compilation on a halting spectrum. Plain lazy reduction folds
+nothing and halts only on a finite normal form. The interpreter folds at every depth and halts on
+exactly the rational behaviour, the optimal boundary (Theorems~\ref{thm:termination},
+\ref{thm:optimal}). Bounded compilation lies strictly between: every contraction it fires is interned
+and its re-entry folded, so a cycle that closes within the depth folds and halts, and it halts on more
+than plain lazy reduction; a cycle that closes only deeper is left suspended, and forcing it past the
+bound without returning to the interpreter is where compiled code can diverge.
+
+\paragraph{Loops from folding.}
+A code generator
+$\mathtt{gen} = Y\,\big(\lambda\mathit{self}.\lambda s.\;
+s\,(\lambda h.\lambda t.\,\mathtt{Yield}\,h\,(\mathit{self}\,t))\,\mathtt{Stop}\big)$
+maps a stream to a quoted output stream, with nothing loop-aware in it. Run on a cyclic source such
+as $Y\,(\mathtt{cons}\;0)$, the recursive $\mathit{self}\,t$ re-enters the same interned state, so
+the interpreter folds the back edge and the output is a cyclic quoted stream; a cycle-aware decoder
+turns it into a Python generator with a \texttt{while} loop, which runs and yields the stream. On a
+finite source the same $\mathtt{gen}$ yields a finite, loopless generator. The loop in the compiled
+program is exactly the interpreter's fold of the rational behaviour made imperative, with no sharing
+test in the $\lambda$-term. This is a further specialization, beyond the eager and lazy targets, of a
+productive stream whose behaviour is rational.
+
+\paragraph{Scope.}
+The pieces are executable and tested. Read as Futamura projections \citeTODO{futamura},
+specializing a program under a soundness analysis is an ahead-of-time compiler, and the fold that
+decides $\Omega$ as $\bot$ and folds a cyclic datum is the interpreter's default the analysis falls
+back to. Meta-tracing does not apply here: a meta-tracing just-in-time compiler
+\citeTODO{bolz-tracing} compiles traces of an interpreter, which requires the interpreter to be
+written in the traced language, a $\lambda$ self-interpreter, which this construction does not use;
+here the $\lambda$ term is the program and the interpreter folds its behaviour directly.
+
+\section{Self-Compilation: The Multi-Stage Climb as a Matrix}\label{app:benchmark}
+The compiler compiles itself, and the island depth is its option (Appendix~\ref{app:compiler}): a larger
+depth compiles more of the compiler as native islands and leaves less to the interpreter. Each closed
+sub-term is certified one of three ways: a simply-typable sub-term becomes a strict call-by-value island,
+a normalizing but untypable sub-term becomes a lazy island (call-by-need or call-by-name), and the rest
+stays interpreted. A progressive bootstrap tests whether that makes the compiler faster: the compiler run
+on the interpreter compiles the compiler into a small-island compiler; that compiler compiles the
+compiler into a larger-island compiler; and so on, each stage compiled by the previous.
+Table~\ref{tab:self-compilation} expands the climb into a matrix (every compiler version compiling the
+compiler's own source at every target depth, each in a fresh process, reporting wall-clock time and peak
+resident memory), doubled across the two lazy-island regimes (call-by-need memoises shared sub-results,
+call-by-name recomputes them). The matrix is shown to target depth 64; the depth 128 and 192 columns each
+need several gigabytes per cell, so they are not run here, though the staged compilers are committed for
+every depth (the depth-192 compiler carries the two deep combinators below as whole islands).
+
+\begin{table}[h]
+\centering
+% OUTDATED: this multi-stage island-depth matrix belongs to the removed specializer. The current
+% self-compilation measurement is generated/defun-benchmark.tex (interpreter vs defunctionalized,
+% with the DEFUN-on-DEFUN bootstrap row); regenerate with co-lambda-defun-benchmark.
+\input{generated/self-compilation-benchmark}
+\caption{The multi-stage climb as a matrix, doubled across the two lazy-island regimes (call-by-need
+memoise and call-by-name recompute): rows are the compiler version doing the compiling (the interpreter,
+then the compiler self-compiled at each island depth), columns the target island depth. Within each
+regime block the upper tabular is wall-clock time in seconds and the lower is peak resident memory in
+gigabytes, each of one fresh process compiling the compiler's own source. The linear bootstrap is the
+diagonal.}
+\label{tab:self-compilation}
+\end{table}
+
+The matrix is flat down every column, and the two regimes coincide: for a fixed target depth the
+interpreter and every self-compiled engine take essentially the same time and the same memory, and
+call-by-need and call-by-name agree. So the cost is set by the target depth alone, not by which version
+of the compiler does the compiling nor by the lazy regime. The reason is the soundness discipline the
+islands obey: a compiled island must converge exactly where the interpreter does. The compiler's hot path
+is its analysis, the typability and normalization checks that decide each sub-term's island, driven by
+the same $Y$ fixpoint that makes the compiler untypable. As a value that recursion has no normal form, so
+it can be neither a call-by-value island (which requires strong normalization) nor a lazy island (which
+requires a finite normal form); it stays interpreted in every engine. Its per-step body is a different
+matter: that body is a closed term that uses the recursive call only as a parameter (no self-application),
+so several of the analysis step bodies are simply typable and are compiled as islands. They still do not
+change the cost, and measuring a reflect boundary shows why. A typable step body compiled to native code
+runs with no interpreter involvement when its arguments are host values. In the hot path, though, its
+arguments arrive from the untypable driver as interpreter nodes, and the node-to-host bridge a positive
+arity island would need so the step body can branch on them is itself interpreter-driven: it forces each
+sub-result back through the interpreter (one application per step, so interpreter speed), and a variant
+that does not force diverges under read-back. So the per-step work is performed by the interpreter either
+way; the native code helps only where the driver and the data are already native, which the untypable
+recursion driver is not. That, not the size of the islands, is why the matrix is flat and the two regimes
+coincide. The cost grows only with the target depth, because a deeper target types deeper sub-terms.
+The deeper obstacle is that soundness and performance are not the same kind of property here. That a
+compiled island converges exactly where the interpreter does is a local fact, provable for one island in
+isolation. Performance is global: the interpreter's tabling is a single cache shared across the whole
+compilation, so carving a recursion into an island, which keeps its own memo, gives up the cross-term
+sharing the analysis was built on (the closedness measure, for instance, is deliberately depth-free so
+the interner shares it at every position and a whole-tree scan is linear). Removing one such computation
+from the shared cache is sound but can slow code arbitrarily far away that depended on the same entry,
+and no local analysis can rule that out. A sound speedup of the hot path therefore cannot be licensed by
+a static local certificate; it would need a feedback-directed heuristic, in the spirit of hardware branch
+prediction or a tracing just-in-time compiler, that uses an observed execution profile to predict which
+regions repay native compilation and leaves the rest to the shared interpreter, correcting itself when a
+prediction does not pay. Speeding up the shared interpreter itself is the complementary alternative whose
+benefit is global by construction and so cannot regress a distant cache.
+
+% =====================================================================
+%% The body cites via \citeTODO (red draft markers), never \cite, so
+%% \nocite{*} forces every references.bib entry into the printed list,
+%% reproducing the former inline thebibliography under ACM formatting.
+\nocite{*}
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{references}
+
+\end{document}

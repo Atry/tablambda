@@ -1,0 +1,25 @@
+# serializer version: 1
+# name: test_defun_benchmark_metrics_are_stable[defun_benchmark_metrics]
+  dict({
+    'DEFUN on S': dict({
+      'compiled_tabled': 3896,
+      'interpreter_tabled': 22892,
+      'results_agree': True,
+    }),
+    'DEFUN on identity': dict({
+      'compiled_tabled': 1297,
+      'interpreter_tabled': 11314,
+      'results_agree': True,
+    }),
+    'edit-distance intention/execution': dict({
+      'compiled_tabled': 8987,
+      'interpreter_tabled': 14747,
+      'results_agree': True,
+    }),
+    'edit-distance kitten/sitting': dict({
+      'compiled_tabled': 6444,
+      'interpreter_tabled': 10636,
+      'results_agree': True,
+    }),
+  })
+# ---

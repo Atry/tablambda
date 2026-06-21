@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling", "uv-dynamic-versioning>=0.7.0", "editables"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.uv-dynamic-versioning]
+vcs = "git"
+style = "pep440"
+bump = false
+fallback-version = "0.0.0.dev0"
+metadata = false
+
+[project]
+name = "co-lambda-examples"
+dynamic = ["version"]
+description = "Example applications for co-lambda, their committed defunctionalized (compiled) modules, and the interpreted-vs-compiled benchmark"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [{ name = "Yang, Bo", email = "yang-bo@yang-bo.com" }]
+dependencies = ["co-lambda"]
+
+[project.scripts]
+co-lambda-defun-benchmark = "co_lambda_examples._benchmark:main"
+co-lambda-defun-artifacts = "co_lambda_examples._artifacts:main"
+co-lambda-defun-examples = "co_lambda_examples._examples:main"
+co-lambda-editdistance-figure = "co_lambda_examples._editdistance_figure:main"
+co-lambda-editdistance-code = "co_lambda_examples._editdistance_code:main"
+co-lambda-editdistance-trace = "co_lambda_examples._editdistance_trace:main"
+co-lambda-cyclic-zeros-figure = "co_lambda_examples._cyclic_zeros_figure:main"
+co-lambda-cyclic-zeros-trace = "co_lambda_examples._cyclic_zeros_trace:main"
+co-lambda-cyclic-zeros-code = "co_lambda_examples._cyclic_zeros_code:main"
+co-lambda-omega-figure = "co_lambda_examples._omega_figure:main"
+co-lambda-omega-trace = "co_lambda_examples._omega_trace:main"
+co-lambda-omega-code = "co_lambda_examples._omega_code:main"
+
+[tool.uv]
+sources = { "co-lambda" = { workspace = true } }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/co_lambda_examples"]
+only-include = ["src/co_lambda_examples"]
+sources = ["src"]
+
+[project.urls]
+Repository = "https://github.com/Atry/MIXINv2"

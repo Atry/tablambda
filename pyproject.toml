@@ -1,0 +1,70 @@
+[project]
+name = "mixinv2-workspace"
+version = "0.0.0.dev0"
+description = "A dependency injection framework with pytest-fixture syntax, plus a configuration language for declarative programming"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [{ name = "Yang, Bo", email = "yang-bo@yang-bo.com" }]
+keywords = ["mixinv2", "mixin", "composition", "dependency-injection"]
+dependencies = ["co-lambda", "co-lambda-examples"]
+
+[project.urls]
+Repository = "https://github.com/Atry/MIXINv2"
+
+[tool.uv]
+# Supported target environments: CPython 3.11 and PyPy 3.11 (PyPy 7.3.20 implements the
+# 3.11 language level). uv produces a universal lock satisfying both interpreter
+# implementations at the requires-python 3.11 floor.
+environments = [
+    "implementation_name == 'cpython'",
+    "implementation_name == 'pypy'",
+]
+sources = { fixpoints = { workspace = true }, "co-lambda" = { workspace = true }, "co-lambda-examples" = { workspace = true } }
+cache-keys = [
+    { file = "pyproject.toml" },
+    { git = { commit = true, tags = true } },
+]
+# Note: uv source keys use normalized names (dashes) even when project names use dots
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[dependency-groups]
+dev = [
+    "aiosqlite>=0.22.1",
+    "ipykernel>=7.1.0",
+    "jupyter>=1.1.1",
+    "jupyter-collaboration==4.0.2",
+    "jupyter-mcp-server>=0.18.2",
+    "jupyter-mcp-tools>=0.1.4",
+    "jupyterlab==4.4.1",
+    "limited-shell>=0.10.10",
+    "nbconvert>=7.16.6",
+    "ordered-set>=4.1.0",
+    "papermill>=2.6.0",
+    "py-spy>=0.4.1",
+    "pyflyby>=1.10.2",
+    "pyright>=1.1.407",
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+    "pytest-env>=1.5.0",
+    "pytest-freezegun>=0.4.2",
+    "pytest-frozen-uuids>=0.3.5",
+    "pytest-randomly>=4.0.1",
+    "pytest-recording>=0.13.4",
+    "ruff>=0.14.3",
+    "starlette>=0.50.0",
+    "syrupy>=5.0.0",
+    "vcrpy>=7.0.0",
+]
+
+[tool.pyright]
+include = [
+    "packages/fixpoints/src",
+    "packages/fixpoints/tests",
+    "packages/co-lambda/src",
+    "packages/co-lambda/tests",
+    "packages/co-lambda-examples/src",
+    "packages/co-lambda-examples/tests",
+]

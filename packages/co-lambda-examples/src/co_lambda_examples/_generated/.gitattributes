@@ -1,0 +1,5 @@
+# Machine-generated Python: each example application or input, defunctionalized to a module of
+# @interned closure classes, per Python version (the _py<ver> tag). Do not edit by hand.
+# Regenerate with the console script co-lambda-defun-artifacts
+# (python -m co_lambda_examples._artifacts).
+* linguist-generated=true

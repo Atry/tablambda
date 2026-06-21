@@ -1,0 +1,76 @@
+# serializer version: 1
+# name: test_s_combinator_capture[s_combinator_source_py311]
+  '''
+  @interned
+  class vg_6d9f203e16ae1b42:
+      cap_0: Lambda
+      cap_1: Lambda
+  
+      def __call__(self, a):
+          return Thunk(Thunk(self.cap_0, a), Thunk(self.cap_1, a))
+  
+  @interned
+  class vg_87785a0023a18366:
+      cap_0: Lambda
+  
+      def __call__(self, a):
+          return vg_6d9f203e16ae1b42(self.cap_0, a)
+  
+  @interned
+  class vg_9b43f2bb280cb9a0:
+  
+      def __call__(self, a):
+          return vg_87785a0023a18366(a)
+  compiled = vg_9b43f2bb280cb9a0()
+  '''
+# ---
+# name: test_s_combinator_capture[s_combinator_source_py312]
+  '''
+  @interned
+  class vg_5f904f08c0de3c51:
+  
+      def __call__(self, a):
+          return vg_61e50e9b94446a84(a)
+  
+  @interned
+  class vg_61e50e9b94446a84:
+      cap_0: Lambda
+  
+      def __call__(self, a):
+          return vg_70b9cfbe4153cbda(self.cap_0, a)
+  
+  @interned
+  class vg_70b9cfbe4153cbda:
+      cap_0: Lambda
+      cap_1: Lambda
+  
+      def __call__(self, a):
+          return Thunk(Thunk(self.cap_0, a), Thunk(self.cap_1, a))
+  compiled = vg_5f904f08c0de3c51()
+  '''
+# ---
+# name: test_s_combinator_capture[s_combinator_source_py313]
+  '''
+  @interned
+  class vg_06b9d631843e6868:
+  
+      def __call__(self, a):
+          return vg_fae107ca4c8122d0(a)
+  
+  @interned
+  class vg_3f43d6474a4a6c72:
+      cap_0: Lambda
+      cap_1: Lambda
+  
+      def __call__(self, a):
+          return Thunk(Thunk(self.cap_0, a), Thunk(self.cap_1, a))
+  
+  @interned
+  class vg_fae107ca4c8122d0:
+      cap_0: Lambda
+  
+      def __call__(self, a):
+          return vg_3f43d6474a4a6c72(self.cap_0, a)
+  compiled = vg_06b9d631843e6868()
+  '''
+# ---

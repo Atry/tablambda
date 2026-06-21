@@ -1,0 +1,19 @@
+{
+  "files.associations": {
+    "*.ojson": "json",
+    "*.otoml": "toml",
+    "*.oyaml": "yaml",
+    "*.oyml": "yaml",
+    ".envrc.private": "shellscript"
+  },
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "yaml.schemas": {
+    "./mixinv2.schema.json": [
+      "*.mixin.yaml",
+      "*.mixin.yml",
+      "*.oyml",
+      "*.oyaml"
+    ]
+  }
+}
