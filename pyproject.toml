@@ -1,12 +1,12 @@
 [project]
 name = "co-lambda-workspace"
 version = "0.0.0.dev0"
-description = "An interpreter that reads pure lambda-terms as the least fixpoint of a first-order shape relation, with example applications and the accompanying paper"
+description = "A pure lambda-calculus interpreter that applies tabling to weak-head reduction, turning self-referential terms into finite cyclic graphs, with example applications and the accompanying paper"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 authors = [{ name = "Yang, Bo", email = "yang-bo@yang-bo.com" }]
-keywords = ["lambda-calculus", "least-fixpoint", "coalgebra", "rational-tree", "interpreter"]
+keywords = ["lambda-calculus", "tabling", "weak-head-reduction", "cyclic-graphs", "memoization", "least-fixpoint", "interpreter"]
 dependencies = ["co-lambda", "co-lambda-examples"]
 
 [project.urls]
