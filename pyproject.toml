@@ -59,6 +59,12 @@ dev = [
     "vcrpy>=7.0.0",
 ]
 
+[tool.pytest.ini_options]
+# Snapshots are tagged per Python version (see _python_tag), so any single
+# interpreter run leaves the other versions' snapshots unused. Warn instead of
+# failing the session so committed py311/py312/py313 snapshots can coexist.
+addopts = "--snapshot-warn-unused"
+
 [tool.pyright]
 include = [
     "packages/fixpoints/src",
