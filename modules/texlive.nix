@@ -1,9 +1,17 @@
-{ ... }: {
-  imports = [ ./dev.nix ];
-  partitions.dev.module.perSystem = { pkgs, lib, ... }:
+{ flake-parts-lib, ... }: {
+  # Expose the paper's TeXLive package list as a per-system option so the monorepo
+  # development environment can install the same TeX into its dev shell while this
+  # subrepo only produces the appendix PDF artifact (no dev shell here).
+  options.perSystem = flake-parts-lib.mkPerSystemOption ({ lib, ... }: {
+    options.coLambdaTexlivePackages = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      description = "TeXLive package names for the co-lambda paper build and the dev-shell TeX.";
+    };
+  });
+  config.perSystem = { pkgs, lib, ... }:
     let
-      # TeXLive packages shared by the devshell paper build and the
-      # standalone appendix PDF derivation below.
+      # TeXLive packages shared by the dev-shell paper build and the standalone appendix
+      # PDF derivation below.
       texlivePackages = [
         "scheme-medium"
         "cjk"
@@ -90,17 +98,16 @@
         root = ../papers/co-lambda;
         fileset = coLambdaSources;
       };
-    in {
-      packages.co-lambda-appendix = coLambdaAppendixPdf;
 
-      ml-ops.devcontainer.devenvShellModule = {
-        packages = [ pkgs.tex-fmt pkgs.poppler-utils ];
-        languages = {
-          texlive = {
-            enable = true;
-            packages = texlivePackages;
-          };
-        };
+      coLambdaSubmissionPdf = mkPaperPdf {
+        name = "co-lambda-submission.pdf";
+        root = ../papers/co-lambda;
+        fileset = coLambdaSources;
+        entry = "submission";
       };
+    in {
+      coLambdaTexlivePackages = texlivePackages;
+      packages.co-lambda-appendix = coLambdaAppendixPdf;
+      packages.co-lambda-submission = coLambdaSubmissionPdf;
     };
 }
