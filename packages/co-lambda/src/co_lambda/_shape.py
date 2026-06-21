@@ -1,4 +1,4 @@
-"""Weak head normalization: the structure map ``out`` of the lambda-calculus coalgebra.
+"""Weak head normalization: a term's outermost constructor, computed as a least fixpoint by tabling.
 
 ``weak_head_normalize`` exposes a node's outermost constructor after weak head reduction (it stops
 at the outermost constructor and does not reduce under ``lambda``). A deterministic calculus
