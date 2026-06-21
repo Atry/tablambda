@@ -293,11 +293,11 @@ Since data such as lists and trees are themselves pure $\lambda$-terms (the Scot
 
 \begin{table*}
   \caption{\bilingual{The five regimes a term can present. \emph{Previous} is ordinary reduction, which unfolds the
-    solution without tabling; \emph{Ours} is the tabled evaluation of Algorithm~\ref{alg:whnf}. A state is
+    solution without tabling; \emph{Ours} is the tabled evaluation of Algorithm~\ref{alg:solvewhnf}. A state is
     \emph{productive} when reduction there exposes a layer rather than continuing silently. The two
     semantics realize the same denotation and differ only in representation, folding a rational infinite
     tree into a finite cyclic graph, and in termination, deciding an unproductive loop as $\bot$ in finite
-  time.}{一个项可能呈现的五种情形。\emph{以往}指普通归约,它不做 tabling 而直接展开解;\emph{本文}指算法~\ref{alg:whnf}
+  time.}{一个项可能呈现的五种情形。\emph{以往}指普通归约,它不做 tabling 而直接展开解;\emph{本文}指算法~\ref{alg:solvewhnf}
     的 tabled 求值。当在某状态处归约暴露出一层、而非静默地继续下去时,该状态是\emph{生产性的}。两种语义实现同一个指称,
     差别只在表示(把一棵有理的无限树折叠成一张有限的环图)与停机性(在有限时间内把非生产性循环判定为 $\bot$)上。}}
   \label{tab:cases}
@@ -322,7 +322,7 @@ Since data such as lists and trees are themselves pure $\lambda$-terms (the Scot
   \item \emph{构造。} 弱头归约的\emph{tabled 求值}:一次一个项地跟随那张一层映射,每当某个项
     再次出现便复用已制表的项,于是折叠出环的回边(back edge)不额外花费代价。一个非生产性
     循环,即回到起点却未暴露任何一层者,会在有限时间内被判定为 $\bot$(未定义)
-    (算法~\ref{alg:whnf})。
+    (一层映射见算法~\ref{alg:whnfmap},通用驱动器见算法~\ref{alg:whnf},二者组合成的求值器见算法~\ref{alg:solvewhnf})。
   \item \emph{理论。} 我们证明该求值器是\emph{可靠的}(它返回的有限图展开为 Lévy--Longo 树,
     定理~\ref{thm:correctness})、\emph{止步于有理性上限}(任何过程都无法返回超出有理片段的有限图,
     定理~\ref{thm:termination}、\ref{thm:ceiling}),并且解是\emph{唯一的}(最小不动点等于
@@ -339,7 +339,7 @@ Since data such as lists and trees are themselves pure $\lambda$-terms (the Scot
     one-layer map a term at a time and reuse a tabled term whenever one recurs, so the back
     edges that fold a cycle cost nothing extra. An unproductive loop, one returning to its
     start without exposing a layer, is decided as $\bot$ (undefined) in finite time
-    (Algorithm~\ref{alg:whnf}).
+    (the one-layer map is Algorithm~\ref{alg:whnfmap}, the general driver Algorithm~\ref{alg:whnf}, and the evaluator they compose Algorithm~\ref{alg:solvewhnf}).
   \item \emph{The theory.} We prove the evaluator \emph{sound} (the finite graph it returns
     unfolds to the L\'evy--Longo tree, Theorem~\ref{thm:correctness}), \emph{bounded at the rationality ceiling} (no
       procedure can return a finite graph beyond the rational fragment,
@@ -416,9 +416,9 @@ We recall \emph{tabling}, the standard method for solving a least-fixpoint equat
 % 不要升格为定理（prop:out 留在附录）。
 \paragraph{\bilingual{Tabling weak-head reduction}{对弱头归约做 tabling}}
 \ifTablambdaChinese
-两者得以结合,是因为弱头归约让每个项都成为这样一个方程:一个项暴露一层,即其弱头范式的顶层构造子覆于其直接子项之上,或在没有范式时暴露 $\bot$,而这些子项又是项。我们把这暴露出的一层记作 $\outm(t)$;当静默归约重访某个项却不暴露任何一层时,$\outm(t)$ 就是 $\bot$,即该归约的最小不动点(引理~\ref{lem:mono-llt})。从一个根项出发对 $\outm$ 做 tabling,便算出该项的 Lévy--Longo 树(算法~\ref{alg:whnf}),并把它折叠成一张可能有环的图。那棵树就是我们固定下来的指称,因此这张图改变的是表示、而非含义,而 $\outm(t)$ 是其中的一层。树与图是树的逼近序(approximation order)上的一个点,其中 $\bot$ 最小,而一棵树通过暴露更多层得到细化;我们证明这构成一个域(domain)(附录~\ref{sec:order})。
+两者得以结合,是因为弱头归约让每个项都成为这样一个方程:一个项暴露一层,即其弱头范式的顶层构造子覆于其直接子项之上,或在没有范式时暴露 $\bot$,而这些子项又是项。我们把这暴露出的一层记作 $\outm(t)$;当静默归约重访某个项却不暴露任何一层时,$\outm(t)$ 就是 $\bot$,即该归约的最小不动点(引理~\ref{lem:mono-llt})。从一个根项出发对 $\outm$ 做 tabling,便算出该项的 Lévy--Longo 树(算法~\ref{alg:solvewhnf}),并把它折叠成一张可能有环的图。那棵树就是我们固定下来的指称,因此这张图改变的是表示、而非含义,而 $\outm(t)$ 是其中的一层。树与图是树的逼近序(approximation order)上的一个点,其中 $\bot$ 最小,而一棵树通过暴露更多层得到细化;我们证明这构成一个域(domain)(附录~\ref{sec:order})。
 \else
-The two combine because weak-head reduction makes each term such an equation: a term exposes one layer, the top constructor of its weak-head normal form over its immediate sub-terms, or $\bot$ when it has no normal form, and the sub-terms are again terms. We write $\outm(t)$ for this exposed layer; where the silent reduction revisits a term without exposing one, $\outm(t)$ is $\bot$, the least fixpoint of that reduction (Lemma~\ref{lem:mono-llt}). Tabling $\outm$ from a root term computes the term's L\'evy--Longo tree (Algorithm~\ref{alg:whnf}) and folds it into a graph that may be cyclic. That tree is the denotation we fixed, so the graph changes the representation, not the meaning, and $\outm(t)$ is one layer of it. The tree and the graph are one point of the approximation order on trees, $\bot$ least and a tree refined by exposing further layers, which we show is a domain (Appendix~\ref{sec:order}).
+The two combine because weak-head reduction makes each term such an equation: a term exposes one layer, the top constructor of its weak-head normal form over its immediate sub-terms, or $\bot$ when it has no normal form, and the sub-terms are again terms. We write $\outm(t)$ for this exposed layer; where the silent reduction revisits a term without exposing one, $\outm(t)$ is $\bot$, the least fixpoint of that reduction (Lemma~\ref{lem:mono-llt}). Tabling $\outm$ from a root term computes the term's L\'evy--Longo tree (Algorithm~\ref{alg:solvewhnf}) and folds it into a graph that may be cyclic. That tree is the denotation we fixed, so the graph changes the representation, not the meaning, and $\outm(t)$ is one layer of it. The tree and the graph are one point of the approximation order on trees, $\bot$ least and a tree refined by exposing further layers, which we show is a domain (Appendix~\ref{sec:order}).
 \fi
 
 % 算法（本 session 讨论得出的作者侧决定）：
@@ -527,9 +527,9 @@ The two combine because weak-head reduction makes each term such an equation: a 
 % 可判定同一性认出、折成 back edge。thm:unique（lfp=gfp）是另一回事，留正文。
 \paragraph{\bilingual{Soundness}{可靠性}}
 \ifTablambdaChinese
-该求值器是可靠的:从一个项 $t$ 出发对 $\outm$ 做 tabling,会构造出一张展开为 $t$ 的 Lévy--Longo 树的图。算法~\ref{alg:whnf} 就是这个 tabling:$\textsf{TabledWHNF} = \textsf{Tabled}(\textsf{WHNF}, \cdot)$ 运行通用驱动器 \textsf{Tabled},后者把一层映射从 $\bot$ 迭代到它的最小不动点,作用于暴露静默头部归约之一层的弱头映射 \textsf{WHNF};仍在归约中的项以其运行中逼近重入,而再次出现的项被折叠为一条回边。Tabling 是最小不动点语义的标准忠实方法,而弱头归约为它提供了对状态所需的三样东西:它所产生的树上的一个逼近序、一个单调的展开,以及可达项都是有限、无环的一阶项且具有可判定的结构同一性,\footnote{实现通过在项构造时对其做内化(intern,即 hash-consing),把这一同一性变成常数时间的指针测试;内化会终止,因为每个可达项都是有限且无环的(引理~\ref{lem:finite});它是一项优化,加速 tabling 所需的同一性检查,而不影响 tabling 所计算出的结果。}因此再次出现的项会被认出并折叠为回边,而非永远展开下去。证明见附录~\ref{app:faithful}。
+该求值器是可靠的:从一个项 $t$ 出发对 $\outm$ 做 tabling,会构造出一张展开为 $t$ 的 Lévy--Longo 树的图。算法~\ref{alg:solvewhnf} 就是这个 tabling:$\textsf{TabledWHNF} = \textsf{Tabled}(\textsf{WHNF}, \cdot)$ 运行通用驱动器 \textsf{Tabled}(算法~\ref{alg:whnf}),后者把一层映射从 $\bot$ 迭代到它的最小不动点,作用于暴露静默头部归约之一层的弱头映射 \textsf{WHNF}(算法~\ref{alg:whnfmap});仍在归约中的项以其运行中逼近重入,而再次出现的项被折叠为一条回边。Tabling 是最小不动点语义的标准忠实方法,而弱头归约为它提供了对状态所需的三样东西:它所产生的树上的一个逼近序、一个单调的展开,以及可达项都是有限、无环的一阶项且具有可判定的结构同一性,\footnote{实现通过在项构造时对其做内化(intern,即 hash-consing),把这一同一性变成常数时间的指针测试;内化会终止,因为每个可达项都是有限且无环的(引理~\ref{lem:finite});它是一项优化,加速 tabling 所需的同一性检查,而不影响 tabling 所计算出的结果。}因此再次出现的项会被认出并折叠为回边,而非永远展开下去。证明见附录~\ref{app:faithful}。
 \else
-The evaluator is sound: tabling $\outm$ from a term $t$ builds a graph that unfolds to the L\'evy--Longo tree of $t$. Algorithm~\ref{alg:whnf} is this tabling: $\textsf{TabledWHNF} = \textsf{Tabled}(\textsf{WHNF}, \cdot)$ runs the general driver \textsf{Tabled}, which iterates a one-layer map from $\bot$ to its least fixpoint, on the weak head map \textsf{WHNF} that exposes one layer of the silent head reduction, a term still being reduced re-entering at its running approximation, and a recurring term folded into a back edge. Tabling is the standard faithful method for a least-fixpoint semantics, and weak-head reduction supplies the three things it needs of its states: an approximation order on the trees it produces, a monotone unfolding, and reachable terms that are finite, acyclic first-order terms with a decidable structural identity,\footnote{The implementation makes this identity a constant-time pointer test by interning (hash-consing) terms as they are built; interning terminates because every reachable term is finite and acyclic (Lemma~\ref{lem:finite}), and it is an optimization that speeds the identity check tabling needs without affecting what tabling computes.} so a recurring term is recognized and folded into a back edge rather than unfolded forever. The proofs are in Appendix~\ref{app:faithful}.
+The evaluator is sound: tabling $\outm$ from a term $t$ builds a graph that unfolds to the L\'evy--Longo tree of $t$. Algorithm~\ref{alg:solvewhnf} is this tabling: $\textsf{TabledWHNF} = \textsf{Tabled}(\textsf{WHNF}, \cdot)$ runs the general driver \textsf{Tabled} (Algorithm~\ref{alg:whnf}), which iterates a one-layer map from $\bot$ to its least fixpoint, on the weak head map \textsf{WHNF} (Algorithm~\ref{alg:whnfmap}) that exposes one layer of the silent head reduction, a term still being reduced re-entering at its running approximation, and a recurring term folded into a back edge. Tabling is the standard faithful method for a least-fixpoint semantics, and weak-head reduction supplies the three things it needs of its states: an approximation order on the trees it produces, a monotone unfolding, and reachable terms that are finite, acyclic first-order terms with a decidable structural identity,\footnote{The implementation makes this identity a constant-time pointer test by interning (hash-consing) terms as they are built; interning terminates because every reachable term is finite and acyclic (Lemma~\ref{lem:finite}), and it is an optimization that speeds the identity check tabling needs without affecting what tabling computes.} so a recurring term is recognized and folded into a back edge rather than unfolded forever. The proofs are in Appendix~\ref{app:faithful}.
 \fi
 
 % 我们的工作，贡献（b）：读者唯一真正需要被说服的非平凡定理，唯一性（thm:unique，
@@ -581,14 +581,15 @@ The evaluator ascends from $\bot$, exposing one further layer at a time and fold
 % 标签沿用 sec:application；§1 的 DSL 列表/编译器、app:dsl 的 Datalog 的 \ref 指 §4.2（sec:graphs）。
 \section{\bilingual{Case Study: Three Regimes}{案例研究:三种情形}}\label{sec:application}
 
-% 开场段（取代原 §2 的 Implementation 段）：声明实现了算法1（alg:whnf）的解释器、用 Claude Code 做出，并在
+% 开场段（取代原 §2 的 Implementation 段）：声明实现了求值器 TabledWHNF（alg:solvewhnf，= alg:whnf driver 套
+%   alg:whnfmap 实例）的解释器、用 Claude Code 做出，并在
 %   本节跑 Table 1 的三行。解释器实为 Claude Code vibe coding 做出，但正文只写 "with Claude Code"，不写
 %   "vibe-coded"（register 偏口语）；"Claude Code" 可入正文（含匿名版），切勿写模型 ID。引用 Table~\ref{tab:cases}
 %   兑现"本节是它的实例化"，并为下面三个 subsection 立线索（第 1、3、5 行）。
 \ifTablambdaChinese
-我们用 Claude Code 把算法~\ref{alg:whnf} 的 tabled 求值实现为一个纯 $\lambda$-演算的解释器,\anon[作为补充材料提供]{可获取~\cite{tablambda}},并在表~\ref{tab:cases} 所列情形中的三种上运行它,即解释器与普通归约分道扬镳的那三种:一个会终止的计算,其重复的工作被它共享成一张有限图;一个生产性的环,被它折叠成一张有限的环图;以及一个非生产性循环,被它在有限时间内判定为 $\bot$。
+我们用 Claude Code 把算法~\ref{alg:solvewhnf} 的 tabled 求值实现为一个纯 $\lambda$-演算的解释器,\anon[作为补充材料提供]{可获取~\cite{tablambda}},并在表~\ref{tab:cases} 所列情形中的三种上运行它,即解释器与普通归约分道扬镳的那三种:一个会终止的计算,其重复的工作被它共享成一张有限图;一个生产性的环,被它折叠成一张有限的环图;以及一个非生产性循环,被它在有限时间内判定为 $\bot$。
 \else
-We implemented the tabled evaluation of Algorithm~\ref{alg:whnf} as an interpreter for the pure $\lambda$-calculus with Claude Code, available\anon[ as supplementary material]{~\cite{tablambda}}, and run it on three of the regimes Table~\ref{tab:cases} sets out, the three in which the interpreter parts from ordinary reduction: a terminating computation whose repeated work it shares into a finite graph, a productive cycle it folds into a finite cyclic graph, and an unproductive loop it decides as $\bot$ in finite time.
+We implemented the tabled evaluation of Algorithm~\ref{alg:solvewhnf} as an interpreter for the pure $\lambda$-calculus with Claude Code, available\anon[ as supplementary material]{~\cite{tablambda}}, and run it on three of the regimes Table~\ref{tab:cases} sets out, the three in which the interpreter parts from ordinary reduction: a terminating computation whose repeated work it shares into a finite graph, a productive cycle it folds into a finite cyclic graph, and an unproductive loop it decides as $\bot$ in finite time.
 \fi
 
 % §3.1 = 第 1 行（共享→有限图）。这是原 edit-distance case study，整段下移为本 subsection；不重述 §1.1 的动机。
@@ -648,9 +649,9 @@ Take $a=\mathtt{ab}$ and $b=\mathtt{cd}$ (Figure~\ref{fig:editdistance}). The he
 % app:editdistance-trace；trace 由 monkey-patch 解释器观测生成（不手写）。
 \paragraph{\bilingual{Stepping through the interpreter}{逐步走过解释器}}
 \ifTablambdaChinese
-这种坍缩并非由 $\mathtt{ed}$ 安排;它是算法~\ref{alg:whnf} 的 tabled 求值在运行时所做的。为求解 $\mathtt{ed}\,(\mathtt{cons}\,a\,(\mathtt{cons}\,b\,\mathtt{nil}))\,(\mathtt{cons}\,c\,(\mathtt{cons}\,d\,\mathtt{nil}))$(以 $a,b,c,d$ 记 BinNat 字符码),一层步骤收缩头部 redex,展开 $Y$ 并用 $\mathtt{eq}$ 比较两个头部;它们不同,因此暴露出的一层是覆于三个递归调用之上的 $\mathtt{succ}\,(\mathtt{min}\,\dots)$。其中第一个,$\mathtt{ed}\,(\mathtt{cons}\,b\,\mathtt{nil})\,(\mathtt{cons}\,d\,\mathtt{nil})$,尚不在表中,于是解释器求解它并记录其层。当删除分支稍后请求同一个项时,它是同一个内化节点、已在表中,其层被直接返回而无需再次求解:一次 cache 命中,即图中入到某一节点的第二条边。附录~\ref{app:editdistance-trace} 是整个运行过程,每个子问题的求解与之后每一次出现的命中,按解释器到达它们的次序排列,由对解释器插桩记录而来。这段 trace 与附录~\ref{app:editdistance-code} 的列表都是生成的:trace 由运行解释器得到,列表由源项得到,均非手工誊写。
+这种坍缩并非由 $\mathtt{ed}$ 安排;它是算法~\ref{alg:solvewhnf} 的 tabled 求值在运行时所做的。为求解 $\mathtt{ed}\,(\mathtt{cons}\,a\,(\mathtt{cons}\,b\,\mathtt{nil}))\,(\mathtt{cons}\,c\,(\mathtt{cons}\,d\,\mathtt{nil}))$(以 $a,b,c,d$ 记 BinNat 字符码),一层步骤收缩头部 redex,展开 $Y$ 并用 $\mathtt{eq}$ 比较两个头部;它们不同,因此暴露出的一层是覆于三个递归调用之上的 $\mathtt{succ}\,(\mathtt{min}\,\dots)$。其中第一个,$\mathtt{ed}\,(\mathtt{cons}\,b\,\mathtt{nil})\,(\mathtt{cons}\,d\,\mathtt{nil})$,尚不在表中,于是解释器求解它并记录其层。当删除分支稍后请求同一个项时,它是同一个内化节点、已在表中,其层被直接返回而无需再次求解:一次 cache 命中,即图中入到某一节点的第二条边。附录~\ref{app:editdistance-trace} 是整个运行过程,每个子问题的求解与之后每一次出现的命中,按解释器到达它们的次序排列,由对解释器插桩记录而来。这段 trace 与附录~\ref{app:editdistance-code} 的列表都是生成的:trace 由运行解释器得到,列表由源项得到,均非手工誊写。
 \else
-The collapse is not arranged by $\mathtt{ed}$; it is what the tabled evaluation of Algorithm~\ref{alg:whnf} does as it runs. To solve $\mathtt{ed}\,(\mathtt{cons}\,a\,(\mathtt{cons}\,b\,\mathtt{nil}))\,(\mathtt{cons}\,c\,(\mathtt{cons}\,d\,\mathtt{nil}))$, writing $a,b,c,d$ for the BinNat character codes, the one-layer step contracts the head redex, unfolding $Y$ and comparing the two heads with $\mathtt{eq}$; they differ, so the exposed layer is $\mathtt{succ}\,(\mathtt{min}\,\dots)$ over the three recursive calls. The first of them, $\mathtt{ed}\,(\mathtt{cons}\,b\,\mathtt{nil})\,(\mathtt{cons}\,d\,\mathtt{nil})$, is not yet in the table, so the interpreter solves it and records its layer. When the deletion branch later asks for that same term, it is the same interned node, already in the table, and its layer is returned without solving it again: a cache hit, the second edge into one node in the figure. Appendix~\ref{app:editdistance-trace} is the whole run, every subproblem solved and every later occurrence hit, in the order the interpreter reaches them, recorded by instrumenting the interpreter. Both this trace and the listing of Appendix~\ref{app:editdistance-code} are generated, the trace by running the interpreter and the listing from the source terms, not transcribed by hand.
+The collapse is not arranged by $\mathtt{ed}$; it is what the tabled evaluation of Algorithm~\ref{alg:solvewhnf} does as it runs. To solve $\mathtt{ed}\,(\mathtt{cons}\,a\,(\mathtt{cons}\,b\,\mathtt{nil}))\,(\mathtt{cons}\,c\,(\mathtt{cons}\,d\,\mathtt{nil}))$, writing $a,b,c,d$ for the BinNat character codes, the one-layer step contracts the head redex, unfolding $Y$ and comparing the two heads with $\mathtt{eq}$; they differ, so the exposed layer is $\mathtt{succ}\,(\mathtt{min}\,\dots)$ over the three recursive calls. The first of them, $\mathtt{ed}\,(\mathtt{cons}\,b\,\mathtt{nil})\,(\mathtt{cons}\,d\,\mathtt{nil})$, is not yet in the table, so the interpreter solves it and records its layer. When the deletion branch later asks for that same term, it is the same interned node, already in the table, and its layer is returned without solving it again: a cache hit, the second edge into one node in the figure. Appendix~\ref{app:editdistance-trace} is the whole run, every subproblem solved and every later occurrence hit, in the order the interpreter reaches them, recorded by instrumenting the interpreter. Both this trace and the listing of Appendix~\ref{app:editdistance-code} are generated, the trace by running the interpreter and the listing from the source terms, not transcribed by hand.
 \fi
 
 % compute/hit 用小写并 \texttt（与 trace listing 的 token 一致）；本段只给复杂度 O(mn)，不放时间/内存。
@@ -1063,9 +1064,9 @@ $\Psi$ commits the root of each tree before consulting its argument, so two cand
 
 \begin{theorem}[\bilingual{Soundness}{可靠性}]\label{thm:correctness}
   \ifTablambdaChinese
-  算法~\ref{alg:whnf} 在根项 $t_0$ 处构造的图展开为 $t_0$ 的 Lévy--Longo 树。
+  算法~\ref{alg:solvewhnf} 在根项 $t_0$ 处构造的图展开为 $t_0$ 的 Lévy--Longo 树。
   \else
-  The graph Algorithm~\ref{alg:whnf} builds at a root term $t_0$ unfolds to the L\'evy--Longo tree of $t_0$.
+  The graph Algorithm~\ref{alg:solvewhnf} builds at a root term $t_0$ unfolds to the L\'evy--Longo tree of $t_0$.
   \fi
 \end{theorem}
 
@@ -1304,9 +1305,9 @@ The edit-distance term $\mathtt{ed}$ and the pure-lambda library it is built fro
 %   * trace 前须清空全局持久的 WHNF 缓存，否则二次运行因缓存命中而一个 compute 都观测不到。
 \subsection{\bilingual{Edit Distance: The Trace}{编辑距离:trace}}\label{app:editdistance-trace}
 \ifTablambdaChinese
-算法~\ref{alg:whnf} 的求解器在 $\mathtt{ed}\,(\mathtt{cons}\,a\,(\mathtt{cons}\,b\,\mathtt{nil}))\,(\mathtt{cons}\,c\,(\mathtt{cons}\,d\,\mathtt{nil}))$ 上的完整运行,由对解释器插桩记录而来。每一行是求解器到达的一个子问题:第一次是 \texttt{compute},此时它求解该项并把其层写入表;之后每次出现是 \texttt{hit},此时该项是同一个内化节点,其制表的层被直接返回而无需再次求解。缩进是调用深度,而 $a,b,c,d$ 是 BinNat 字符码。九个子问题被计算,即动态规划表的 $(m{+}1)(n{+}1)$ 个状态,而其余每一次出现都是一次命中。
+算法~\ref{alg:solvewhnf} 的求解器在 $\mathtt{ed}\,(\mathtt{cons}\,a\,(\mathtt{cons}\,b\,\mathtt{nil}))\,(\mathtt{cons}\,c\,(\mathtt{cons}\,d\,\mathtt{nil}))$ 上的完整运行,由对解释器插桩记录而来。每一行是求解器到达的一个子问题:第一次是 \texttt{compute},此时它求解该项并把其层写入表;之后每次出现是 \texttt{hit},此时该项是同一个内化节点,其制表的层被直接返回而无需再次求解。缩进是调用深度,而 $a,b,c,d$ 是 BinNat 字符码。九个子问题被计算,即动态规划表的 $(m{+}1)(n{+}1)$ 个状态,而其余每一次出现都是一次命中。
 \else
-The complete run of the solver of Algorithm~\ref{alg:whnf} on $\mathtt{ed}\,(\mathtt{cons}\,a\,(\mathtt{cons}\,b\,\mathtt{nil}))\,(\mathtt{cons}\,c\,(\mathtt{cons}\,d\,\mathtt{nil}))$, recorded by instrumenting the interpreter. Each line is a subproblem the solver reaches: \texttt{compute} the first time, when it solves the term and writes its layer to the table, and \texttt{hit} on every later occurrence, when the term is the same interned node and its tabled layer is returned without solving it again. Indentation is the call depth, and $a,b,c,d$ are the BinNat character codes. Nine subproblems are computed, the $(m{+}1)(n{+}1)$ states of the dynamic-programming table, and every other occurrence is a hit.
+The complete run of the solver of Algorithm~\ref{alg:solvewhnf} on $\mathtt{ed}\,(\mathtt{cons}\,a\,(\mathtt{cons}\,b\,\mathtt{nil}))\,(\mathtt{cons}\,c\,(\mathtt{cons}\,d\,\mathtt{nil}))$, recorded by instrumenting the interpreter. Each line is a subproblem the solver reaches: \texttt{compute} the first time, when it solves the term and writes its layer to the table, and \texttt{hit} on every later occurrence, when the term is the same interned node and its tabled layer is returned without solving it again. Indentation is the call depth, and $a,b,c,d$ are the BinNat character codes. Nine subproblems are computed, the $(m{+}1)(n{+}1)$ states of the dynamic-programming table, and every other occurrence is a hit.
 \fi
 \input{generated/editdistance-trace-full}
 
