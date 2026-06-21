@@ -2,10 +2,13 @@
 
 The artifact for the paper *Cyclic Graphs and Memoization for Free: Solving
 Coalgebraic Equations in the Pure $\lambda$-Calculus*. It reads a pure
-lambda-term as the least fixpoint of a first-order **shape relation**, so a
-guarded cycle (anything `Y` builds) folds into a finite rational graph and an
-unproductive cycle decides as the meaningless leaf, both in finite time, where
-ordinary head reduction would diverge.
+lambda-term as a **coalgebraic equation**, a state that exposes one layer of data
+over its successor states, and lets the lambda-calculus solve it by **tabled
+evaluation**: it tables the states it has seen and folds the recurrence on the
+decidable structural identity of the term, so a guarded cycle (anything `Y`
+builds) folds into a finite cyclic graph and an unproductive cycle decides as the
+meaningless leaf, both in finite time, where ordinary head reduction would
+diverge.
 
 This repository is a uv workspace with three packages and the paper:
 
