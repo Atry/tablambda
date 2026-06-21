@@ -96,12 +96,24 @@
 \makeatletter
 \@ifundefined{ifColambdaBody}{\newif\ifColambdaBody\ColambdaBodytrue}{}
 \@ifundefined{ifColambdaAppendix}{\newif\ifColambdaAppendix\ColambdaAppendixtrue}{}
+% acmart writes \newlabel{tocindent<n>}{<dimen>} into the .aux to align the
+% table of contents. Those bare-dimen labels break hyperref's \newlabel when
+% another build imports this .aux via xr-hyper; the importing entries
+% (submission.tex, supplement.tex) drop them at import time through
+% xr-tocindent-filter.tex, so nothing is suppressed here at the source.
 \makeatother
 
 \begin{document}
 
 \title{Cyclic Graphs and Memoization for Free}
-\subtitle{Solving Coalgebraic Equations in the Pure $\lambda$-Calculus}
+% The appendix-only build (supplement.tex) is distributed as a standalone
+% artifact; give it a distinguishing subtitle so it is not mistaken for the
+% main paper, which keeps its real subtitle.
+\ifColambdaBody
+  \subtitle{Solving Coalgebraic Equations in the Pure $\lambda$-Calculus}
+\else
+  \subtitle{Supplementary Material}
+\fi
 
 \author{Bo Yang}
 \affiliation{%
@@ -120,6 +132,11 @@
 %   它们而膨胀摘要或砍掉主张。但"claim 本身不清楚"是真缺陷：原"self-hosts on its own source"已换——self-hosting
 %   是重载词，易被读成"用同一语言实现该语言 runtime"（L-in-L），与我们的主张不同；改用"a bootstrap compiler that
 %   compiles its own source"。摘要里出现 bootstrap compiler 这种行话没有问题。
+% The abstract and keywords are main-matter front matter: they belong to the
+% paper, not to the standalone appendix PDF (supplement.tex), which sets
+% \ifColambdaBody false. Without this guard \maketitle typesets them in the
+% appendix-only build.
+\ifColambdaBody
 \begin{abstract}
   Representing and transforming cyclic and infinite data in the pure $\lambda$-calculus normally requires an added recursion construct, a \texttt{letrec}, a $\mu$-binder, or a built-in $Y$ for graph reduction, and sharing the repeated work of a memoized or dynamic-programming function normally requires an impure cache. We show that no extension is needed. We apply tabling, the standard method for solving a least-fixpoint equation, to weak-head reduction; this defines a new operational semantics for the pure $\lambda$-calculus that keeps each term's standard lazy meaning. A term that reaches finitely many distinct states comes out as a finite graph, possibly cyclic; the calculus stays pure, and the graph is sound and independent of reduction order. We implemented this operational semantics as a $\lambda$-calculus interpreter and ran it on three regimes. It does dynamic programming automatically, sharing repeated subproblems with no memoization table. It creates and transforms cyclic graphs with no added recursion construct. And it decides an unproductive loop, returning $\bot$ for $\Omega$ in finite time.
 
@@ -130,6 +147,7 @@
   structure as identity, least fixpoint, rational trees, tabling, weak-head reduction, Datalog,
   program analysis, domain-specific language,
 \texorpdfstring{$\lambda$-calculus}{lambda-calculus}}
+\fi % end \ifColambdaBody (abstract and keywords are main-matter only)
 
 \maketitle
 
@@ -170,7 +188,11 @@ This term computes the right distance, but its naive evaluation is exponential, 
 
 \subsection{Solving Coalgebraic Equations}
 
-The resolution adds nothing to the calculus. We give an interpreter, and a compiler, for the pure $\lambda$-calculus under which these very programs run efficiently, their meaning unchanged: $Y\,(\mathtt{cons}\,0)$ evaluates to a finite cyclic graph, $\mathtt{map}\,\mathtt{succ}$ over it to the finite circle of ones, and $\mathtt{ed}$ in $O(mn)$ time and space, each an instance of a regime Table~\ref{tab:cases} sets out. An implementation accompanies the paper\anon[ as supplementary material]{, openly available at \url{https://github.com/Atry/MIXINv2}~\cite{colambda}}. The one idea is to read a program as a \emph{coalgebraic equation}, a state exposing one layer of data over its successor states, and let the $\lambda$-calculus be its \emph{solver}: it tables the states it has seen and folds a recurrence on the decidable structural identity of the term a state is built from, whereas the only identity on the function that term computes, $\beta$-equality, is undecidable. The recognition is tabling's, not an operation a term performs, so the calculus stays pure. And the solution is not checked against the meaning, it \emph{is} the meaning: what a program denotes is by definition the tree its equation unfolds to, so computing the solution cannot change the semantics (Section~\ref{sec:bridge}).
+% 段首用第一人称 we，立的卖点是"不扩展演算就能解决前面那两个病态例子"。判断标准是读者会不会卡：
+% "extend the calculus" 是 PL 术语，专指扩语言（加语法/原语/归约规则），读者不会把下一句的
+% interpreter/compiler 当成 extension（那是实现，不是 language extension），所以读下去自洽不卡。
+% 这正是它优于早先 "add nothing to the calculus" 之处：后者是笼统否定，读者会把求值器也算进去而质疑。
+We solve these problems without extending the calculus. We give an interpreter, and a compiler, for the pure $\lambda$-calculus under which these very programs run efficiently, their meaning unchanged: $Y\,(\mathtt{cons}\,0)$ evaluates to a finite cyclic graph, $\mathtt{map}\,\mathtt{succ}$ over it to the finite circle of ones, and $\mathtt{ed}$ in $O(mn)$ time and space, each an instance of a regime Table~\ref{tab:cases} sets out. An implementation accompanies the paper\anon[ as supplementary material]{, openly available at \url{https://github.com/Atry/MIXINv2}~\cite{colambda}}. The one idea is to read a program as a \emph{coalgebraic equation}, a state exposing one layer of data over its successor states, and let the $\lambda$-calculus be its \emph{solver}: it tables the states it has seen and folds a recurrence on the decidable structural identity of the term a state is built from, whereas the only identity on the function that term computes, $\beta$-equality, is undecidable. The recognition is tabling's, not an operation a term performs, so the calculus stays pure. And the solution is not checked against the meaning, it \emph{is} the meaning: what a program denotes is by definition the tree its equation unfolds to, so computing the solution cannot change the semantics (Section~\ref{sec:bridge}).
 
 The construction is not special to streams, strings, or the $\lambda$-calculus. The tabling needs only states that expose layers and name successor states (Appendix~\ref{sec:coalgebras}); it never asks how a state produces its layer. Any reduction function supplies such states: a rule that at each state either exposes data or takes an internal step, the layer being whatever the internal steps eventually expose, with the $\lambda$-calculus's own reduction, stopped as soon as the outermost shape of the term is settled, as one instance (Appendix~\ref{sec:reductions}). So for any reduction function, wherever tabling returns a finite graph it returns exactly the semantics that function defines. It returns one on the data that reaches finitely many states, each reached by a terminating reduction, a strict sub-fragment of the rational data, those with finitely many distinct subtrees; and beyond the rational data no solution-preserving procedure returns a finite cyclic graph at all, since there is none to return (Theorem~\ref{thm:ceiling}). And since data such as lists and trees are themselves pure $\lambda$-terms (the Scott encoding), every such computable system is again a $\lambda$-term, and one interpreter solves them all on the fragment each reaches with finitely many states, turning the pure $\lambda$-calculus into a small domain-specific language whose memoization falls out of state identity: Datalog queries, graph reachability and points-to analysis, game-tree (minimax) search, and dynamic programming (Section~\ref{sec:graphs}, Appendix~\ref{app:dsl}).
 
