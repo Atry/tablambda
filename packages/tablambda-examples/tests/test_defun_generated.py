@@ -2,14 +2,12 @@
 
 The example apps and inputs are defunctionalized to committed modules under ``_generated`` (see
 ``tablambda_examples._artifacts``). A light test imports the compiled compiler and checks it loads; the
-heavy tests (regenerate-and-diff, self-host faithfulness) are gated behind ``FOL_REGEN_DEFUN=1`` (a
-dedicated gate, distinct from the deprecated multistage bootstrap's ``FOL_REGEN_HEAVY``).
+heavier tests are marked ``slow``.
 """
 
 from __future__ import annotations
 
 import importlib
-import os
 from pathlib import Path
 
 import pytest
@@ -30,10 +28,7 @@ def test_committed_compiled_compiler_loads() -> None:
     assert callable(module.compiled)
 
 
-@pytest.mark.skipif(
-    os.environ.get("FOL_REGEN_DEFUN") != "1",
-    reason="self-compiling DEFUN takes minutes; set FOL_REGEN_DEFUN=1 to run",
-)
+@pytest.mark.slow
 def test_committed_compiled_compiler_matches_source() -> None:
     """The committed compiler artifact is exactly what ``defun_compiler_source`` produces now (no drift)."""
     committed = importlib.import_module(_COMPILER_MODULE)
@@ -43,10 +38,7 @@ def test_committed_compiled_compiler_matches_source() -> None:
     assert committed_text == defun_compiler_source()
 
 
-@pytest.mark.skipif(
-    os.environ.get("FOL_REGEN_DEFUN") != "1",
-    reason="running the self-hosted compiler takes minutes; set FOL_REGEN_DEFUN=1 to run",
-)
+@pytest.mark.slow
 def test_self_hosted_compiler_is_faithful() -> None:
     """The compiled compiler compiles sample programs exactly like the in-process compiler."""
     engine = importlib.import_module(_COMPILER_MODULE).compiled
@@ -71,7 +63,7 @@ def test_defun_benchmark_metrics_are_stable(snapshot) -> None:
             "compiled_tabled": row.compiled.tabled,
             "results_agree": row.interpreter.digest == row.compiled.digest,
         }
-        for row in comparison_rows(include_heavy=False)
+        for row in comparison_rows()
     }
     assert deterministic == snapshot(name="defun_benchmark_metrics")
 
@@ -87,7 +79,7 @@ def test_defun_benchmark_fragment_renders() -> None:
     """The benchmark renders a LaTeX tabular fragment (the committed paper input)."""
     from tablambda_examples._benchmark import benchmark_fragment
 
-    fragment = benchmark_fragment(include_heavy=False)
+    fragment = benchmark_fragment()
     assert "\\begin{tabular}" in fragment
     assert "\\shortstack[r]{Tabled\\\\ratio}" in fragment
 

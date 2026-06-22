@@ -30,6 +30,11 @@ cache-keys = [
 [tool.uv.workspace]
 members = ["packages/*"]
 
+[tool.pytest.ini_options]
+markers = [
+    "slow: mark tests that take a long time to run",
+]
+
 [dependency-groups]
 dev = [
     "aiosqlite>=0.22.1",

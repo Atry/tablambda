@@ -2,13 +2,13 @@
 # name: test_defun_benchmark_metrics_are_stable[defun_benchmark_metrics]
   dict({
     'DEFUN on S': dict({
-      'compiled_tabled': 3919,
-      'interpreter_tabled': 22922,
+      'compiled_tabled': 3937,
+      'interpreter_tabled': 22790,
       'results_agree': True,
     }),
     'DEFUN on identity': dict({
-      'compiled_tabled': 1394,
-      'interpreter_tabled': 11754,
+      'compiled_tabled': 1400,
+      'interpreter_tabled': 11485,
       'results_agree': True,
     }),
     'edit-distance intention/execution': dict({

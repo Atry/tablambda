@@ -162,7 +162,7 @@ def _is_thunk(x: object) -> TypeGuard[Thunk]:
 # --- stack helpers ---------------------------------------------------------------------------------
 
 _COMPILE_RECURSION_LIMIT = 16_000
-_RECURSION_LIMIT = 200_000
+_RECURSION_LIMIT = 2_000_000
 _STACK_SIZE = 1024 * 1024 * 1024  # 1 GiB
 
 
