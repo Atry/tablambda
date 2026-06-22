@@ -22,21 +22,22 @@ from tablambda_examples._artifacts import module_dotted_name
 
 _COMPILER_MODULE = module_dotted_name("compiler")
 
-# The full benchmark runs under whichever interpreter invokes it. The benchmark tests are parametrized
-# over the four interpreters so each one's expected status is declared: a case runs only under its own
-# interpreter (the rest skip via skipif), and CPython 3.12/3.13 cannot build the mandatory bootstrap
-# input input_quote_defun, so there the benchmark fails loudly and the case is an expected failure.
+# The committed _generated artifacts and compiler-examples.tex are produced under CPython 3.11 and
+# reproduced byte for byte only by it and PyPy 3.11 (which shares its ast.unparse). Tests that depend on
+# reproducing them are parametrized over the four interpreters so each one's expected status is declared:
+# a case runs only under its own interpreter (the rest skip via skipif), and CPython 3.12/3.13 do not
+# reproduce the CPython 3.11 artifacts, so there those tests are expected failures.
 _RUNNING_INTERPRETER = (
     "pypy" if sys.implementation.name == "pypy"
     else f"py{sys.version_info.major}{sys.version_info.minor}"
 )
 
-_BENCHMARK_INTERPRETERS = [
+_PY311_ARTIFACT_INTERPRETERS = [
     pytest.param(
         "py311",
         marks=pytest.mark.skipif(
             _RUNNING_INTERPRETER != "py311",
-            reason=f"benchmark runs under py311; current interpreter is {_RUNNING_INTERPRETER}",
+            reason=f"runs under py311; current interpreter is {_RUNNING_INTERPRETER}",
         ),
     ),
     pytest.param(
@@ -44,11 +45,12 @@ _BENCHMARK_INTERPRETERS = [
         marks=[
             pytest.mark.skipif(
                 _RUNNING_INTERPRETER != "py312",
-                reason=f"benchmark runs under py312; current interpreter is {_RUNNING_INTERPRETER}",
+                reason=f"runs under py312; current interpreter is {_RUNNING_INTERPRETER}",
             ),
             pytest.mark.xfail(
-                reason="py312 cannot build the bootstrap input input_quote_defun; the full benchmark "
-                "fails loudly",
+                reason="CPython 3.12 does not reproduce the committed CPython 3.11 artifacts (the deep "
+                "bootstrap input exceeds its recursion cap, and ast.unparse formats the compiled "
+                "modules differently)",
                 strict=True,
             ),
         ],
@@ -58,11 +60,12 @@ _BENCHMARK_INTERPRETERS = [
         marks=[
             pytest.mark.skipif(
                 _RUNNING_INTERPRETER != "py313",
-                reason=f"benchmark runs under py313; current interpreter is {_RUNNING_INTERPRETER}",
+                reason=f"runs under py313; current interpreter is {_RUNNING_INTERPRETER}",
             ),
             pytest.mark.xfail(
-                reason="py313 cannot build the bootstrap input input_quote_defun; the full benchmark "
-                "fails loudly",
+                reason="CPython 3.13 does not reproduce the committed CPython 3.11 artifacts (the deep "
+                "bootstrap input exceeds its recursion cap, and ast.unparse formats the compiled "
+                "modules differently)",
                 strict=True,
             ),
         ],
@@ -71,7 +74,7 @@ _BENCHMARK_INTERPRETERS = [
         "pypy",
         marks=pytest.mark.skipif(
             _RUNNING_INTERPRETER != "pypy",
-            reason=f"benchmark runs under pypy; current interpreter is {_RUNNING_INTERPRETER}",
+            reason=f"runs under pypy; current interpreter is {_RUNNING_INTERPRETER}",
         ),
     ),
 ]
@@ -103,7 +106,7 @@ def test_self_hosted_compiler_is_faithful() -> None:
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("interpreter", _BENCHMARK_INTERPRETERS)
+@pytest.mark.parametrize("interpreter", _PY311_ARTIFACT_INTERPRETERS)
 def test_defun_benchmark_metrics_are_stable(interpreter: str, snapshot) -> None:
     """The benchmark's DETERMINISTIC metrics (tabled-object counts) do not drift, and per cell the
     interpreted and compiled results agree.
@@ -128,15 +131,23 @@ def test_defun_benchmark_metrics_are_stable(interpreter: str, snapshot) -> None:
     assert deterministic == snapshot(name="defun_benchmark_metrics")
 
 
-def test_committed_compiler_examples_matches_generator() -> None:
-    """The committed ``compiler-examples.tex`` is exactly what the examples generator produces now."""
+@pytest.mark.parametrize("interpreter", _PY311_ARTIFACT_INTERPRETERS)
+def test_committed_compiler_examples_matches_generator(interpreter: str) -> None:
+    """The committed ``compiler-examples.tex`` is exactly what the examples generator produces now.
+
+    The generator unparses the compiled modules, whose formatting and content-addressed class names
+    differ across Python versions, so the committed fragment is the CPython 3.11 form; only CPython 3.11
+    and PyPy 3.11 reproduce it byte for byte.
+    """
+    assert interpreter == _RUNNING_INTERPRETER
+
     from tablambda_examples._examples import _LATEX_OUTPUT, compiler_examples_fragment
 
     assert _LATEX_OUTPUT.read_text() == compiler_examples_fragment()
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("interpreter", _BENCHMARK_INTERPRETERS)
+@pytest.mark.parametrize("interpreter", _PY311_ARTIFACT_INTERPRETERS)
 def test_defun_benchmark_fragment_renders(interpreter: str) -> None:
     """The full benchmark runs and renders a LaTeX tabular fragment (the committed paper input).
 
