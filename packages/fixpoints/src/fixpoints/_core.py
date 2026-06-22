@@ -235,6 +235,20 @@ class fixpoint_cached_property:
         fixpoint_cached_property.max_fixpoint_iterations.set(0)   # single-pass
         fixpoint_cached_property.max_fixpoint_iterations.set(100) # bounded multi-pass
         fixpoint_cached_property.max_fixpoint_iterations.set(FixpointIterationSentinel.UNLIMITED) # unbounded (default)
+
+    TODO (trampoline to lift the Python 3.12+ recursion ceiling): when a property's body accesses the
+    same property on child nodes, the descent recurses through ``__get__`` once per level, and each
+    level goes through the descriptor protocol (the C ``__getattribute__`` -> ``__get__`` call). Those C
+    frames count toward CPython 3.12+'s fixed ``Py_C_RECURSION_LIMIT``, which ``sys.setrecursionlimit``
+    and a larger thread stack do NOT lift, so a deep term overflows at ~5,000 levels even inside
+    ``run_in_large_stack``. This is the sole blocker that makes the deep ``input_quote_defun`` artifact
+    (and the self-compilation bootstrap) buildable on CPython 3.11 / PyPy 3.11 only; plain Python
+    recursion and ``ast.unparse`` are pure Python and stay liftable. Measured on CPython 3.13: a
+    recursive ``loose_bound`` over a 50,000-deep term fails at ~4,998 levels, while the same computation
+    on an explicit stack succeeds at the default recursion limit. Driving the descent from an explicit
+    work-stack (e.g. a generator-driven trampoline: the property body yields each child-property request
+    and this driver resolves dependencies bottom-up, preserving ``bottom``/``merge``/``accumulate`` and
+    the reentry digest loop) would remove the C-stack frames per level and lift the ceiling.
     """
 
     max_fixpoint_iterations: ClassVar[ContextVar[int | FixpointIterationSentinel]] = ContextVar(

@@ -8,11 +8,11 @@ heavier tests are marked ``slow``.
 from __future__ import annotations
 
 import importlib
-import sys
 from pathlib import Path
 
 import pytest
 
+from tablambda._defun_runtime import _python_tag
 from tablambda._defunctionalize import compile_with_defun, defun_compiler_source, defunctionalize
 from tablambda._dsl import app, build, lam
 from tablambda._prelude import IDENTITY, KESTREL
@@ -22,35 +22,29 @@ from tablambda_examples._artifacts import module_dotted_name
 
 _COMPILER_MODULE = module_dotted_name("compiler")
 
-# The committed _generated artifacts and compiler-examples.tex are produced under CPython 3.11 and
-# reproduced byte for byte only by it and PyPy 3.11 (which shares its ast.unparse). Tests that depend on
-# reproducing them are parametrized over the four interpreters so each one's expected status is declared:
-# a case runs only under its own interpreter (the rest skip via skipif), and CPython 3.12/3.13 do not
-# reproduce the CPython 3.11 artifacts, so there those tests are expected failures.
-_RUNNING_INTERPRETER = (
-    "pypy" if sys.implementation.name == "pypy"
-    else f"py{sys.version_info.major}{sys.version_info.minor}"
-)
-
-_PY311_ARTIFACT_INTERPRETERS = [
+# The committed _generated artifacts and compiler-examples.tex are produced under one CPython version and
+# reproduced byte for byte only by the matching ``_python_tag()`` (CPython 3.11 and PyPy 3.11 share the
+# py311 tag, including ast.unparse output). Tests that depend on reproducing them are parametrized over
+# the committed tags, matching test_defunctionalize.test_s_combinator_capture: a case runs only under its
+# own tag (the rest skip), and CPython 3.12/3.13 are expected failures, since the deep input_quote_defun
+# artifact cannot be built there and the single committed compiler-examples.tex (the py311 form) does not
+# match their ast.unparse output.
+_PY311_ARTIFACT_TAGS = [
     pytest.param(
         "py311",
         marks=pytest.mark.skipif(
-            _RUNNING_INTERPRETER != "py311",
-            reason=f"runs under py311; current interpreter is {_RUNNING_INTERPRETER}",
+            _python_tag() != "py311", reason=f"committed for py311; running {_python_tag()}"
         ),
     ),
     pytest.param(
         "py312",
         marks=[
             pytest.mark.skipif(
-                _RUNNING_INTERPRETER != "py312",
-                reason=f"runs under py312; current interpreter is {_RUNNING_INTERPRETER}",
+                _python_tag() != "py312", reason=f"committed for py312; running {_python_tag()}"
             ),
             pytest.mark.xfail(
-                reason="CPython 3.12 does not reproduce the committed CPython 3.11 artifacts (the deep "
-                "bootstrap input exceeds its recursion cap, and ast.unparse formats the compiled "
-                "modules differently)",
+                reason="CPython 3.12 cannot build the deep input_quote_defun artifact, and its "
+                "ast.unparse output differs from the committed py311 form",
                 strict=True,
             ),
         ],
@@ -59,23 +53,14 @@ _PY311_ARTIFACT_INTERPRETERS = [
         "py313",
         marks=[
             pytest.mark.skipif(
-                _RUNNING_INTERPRETER != "py313",
-                reason=f"runs under py313; current interpreter is {_RUNNING_INTERPRETER}",
+                _python_tag() != "py313", reason=f"committed for py313; running {_python_tag()}"
             ),
             pytest.mark.xfail(
-                reason="CPython 3.13 does not reproduce the committed CPython 3.11 artifacts (the deep "
-                "bootstrap input exceeds its recursion cap, and ast.unparse formats the compiled "
-                "modules differently)",
+                reason="CPython 3.13 cannot build the deep input_quote_defun artifact, and its "
+                "ast.unparse output differs from the committed py311 form",
                 strict=True,
             ),
         ],
-    ),
-    pytest.param(
-        "pypy",
-        marks=pytest.mark.skipif(
-            _RUNNING_INTERPRETER != "pypy",
-            reason=f"runs under pypy; current interpreter is {_RUNNING_INTERPRETER}",
-        ),
     ),
 ]
 
@@ -106,17 +91,17 @@ def test_self_hosted_compiler_is_faithful() -> None:
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("interpreter", _PY311_ARTIFACT_INTERPRETERS)
-def test_defun_benchmark_metrics_are_stable(interpreter: str, snapshot) -> None:
+@pytest.mark.parametrize("tag", _PY311_ARTIFACT_TAGS)
+def test_defun_benchmark_metrics_are_stable(tag: str, snapshot) -> None:
     """The benchmark's DETERMINISTIC metrics (tabled-object counts) do not drift, and per cell the
     interpreted and compiled results agree.
 
     Time and memory are a measured snapshot and excluded here; the interned-object counts capture the
     coarser, compiled-form tabling, which must stay stable. The benchmark runs every cell including the
-    heavy bootstrap (minutes); the counts are identical on CPython 3.11 and PyPy 3.11 (shared py311
-    artifacts), so one snapshot covers both.
+    heavy bootstrap (minutes); the snapshot is named by the parametrized tag, so each version gets its
+    own (CPython 3.11 and PyPy 3.11 share the py311 tag and the same counts).
     """
-    assert interpreter == _RUNNING_INTERPRETER
+    assert tag == _python_tag()
 
     from tablambda_examples._benchmark import comparison_rows
 
@@ -128,18 +113,18 @@ def test_defun_benchmark_metrics_are_stable(interpreter: str, snapshot) -> None:
         }
         for row in comparison_rows()
     }
-    assert deterministic == snapshot(name="defun_benchmark_metrics")
+    assert deterministic == snapshot
 
 
-@pytest.mark.parametrize("interpreter", _PY311_ARTIFACT_INTERPRETERS)
-def test_committed_compiler_examples_matches_generator(interpreter: str) -> None:
+@pytest.mark.parametrize("tag", _PY311_ARTIFACT_TAGS)
+def test_committed_compiler_examples_matches_generator(tag: str) -> None:
     """The committed ``compiler-examples.tex`` is exactly what the examples generator produces now.
 
     The generator unparses the compiled modules, whose formatting and content-addressed class names
     differ across Python versions, so the committed fragment is the CPython 3.11 form; only CPython 3.11
-    and PyPy 3.11 reproduce it byte for byte.
+    and PyPy 3.11 (sharing the py311 tag) reproduce it byte for byte.
     """
-    assert interpreter == _RUNNING_INTERPRETER
+    assert tag == _python_tag()
 
     from tablambda_examples._examples import _LATEX_OUTPUT, compiler_examples_fragment
 
@@ -147,14 +132,14 @@ def test_committed_compiler_examples_matches_generator(interpreter: str) -> None
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("interpreter", _PY311_ARTIFACT_INTERPRETERS)
-def test_defun_benchmark_fragment_renders(interpreter: str) -> None:
+@pytest.mark.parametrize("tag", _PY311_ARTIFACT_TAGS)
+def test_defun_benchmark_fragment_renders(tag: str) -> None:
     """The full benchmark runs and renders a LaTeX tabular fragment (the committed paper input).
 
     This measures every cell including the heavy bootstrap (minutes); on 3.12/3.13 the bootstrap input
     is absent and it fails loudly, an expected failure declared in the parametrization.
     """
-    assert interpreter == _RUNNING_INTERPRETER
+    assert tag == _python_tag()
 
     from tablambda_examples._benchmark import benchmark_fragment
 

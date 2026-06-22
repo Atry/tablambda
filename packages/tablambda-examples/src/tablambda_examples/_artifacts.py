@@ -72,7 +72,9 @@ ARTIFACTS: "dict[str, Callable[[], Builder]]" = {
 
 # Artifacts whose generation recurses deeper than Python 3.12+'s fixed C-recursion cap allows (the cap
 # is not liftable by ``setrecursionlimit`` or a larger thread stack). Only the pre-3.12 recursion model
-# can build them; they power the (consequently 3.11-only) bootstrap benchmark cell.
+# can build them; they power the (consequently 3.11-only) bootstrap benchmark cell. The cap is hit by
+# the fixpoints property-access descent, not plain recursion or ast.unparse; see the trampoline TODO in
+# fixpoints._core.fixpoint_cached_property for the fix that would make these buildable on 3.12+.
 _DEEP_ARTIFACTS = frozenset({"input_quote_defun"})
 
 
