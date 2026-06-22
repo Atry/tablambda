@@ -16,8 +16,15 @@ Per cell three metrics are compared (ratio = interpreter / compiled, > 1 means t
 wall-clock execution time, peak resident memory (RSS), and the number of TABLED objects
 materialized (interpreter: interned lambda ``Node`` count; compiled: interned ``Thunk`` and closure
 instances). Each cell runs in a fresh subprocess (clean interner, absolute counts); the interpreted and
-compiled results are checked equal. The bootstrap is heavy (minutes, gigabytes). The result is
-written to ``paper/generated/defun-benchmark.tex``.
+compiled results are checked equal. The bootstrap is heavy (minutes, gigabytes) and MANDATORY: there is
+no light subset. Its committed input artifact ``input_quote_defun`` is built only by the pre-3.12
+recursion model, so it exists for CPython 3.11 and PyPy 3.11 alone; on 3.12+ the benchmark fails loudly
+rather than emitting a partial fragment.
+
+Results differ markedly across interpreters, so each writes its OWN fragment named for it,
+``paper/generated/defun-benchmark-<tag>.tex`` (``py311`` for CPython 3.11, ``pypy`` for PyPy); the
+directory is ``$TABLAMBDA_GENERATED_DIR`` when set, so a read-only Nix-store venv can target the working
+tree (see the ``regen-defun-benchmark-*`` Nix apps).
 ``tablambda-defun-benchmark`` runs ``main``; ``--measure <approach> <app> <input>`` is the worker.
 """
 
@@ -27,6 +34,8 @@ import gc
 import hashlib
 import importlib
 import json
+import os
+import platform
 import resource
 import subprocess
 import sys
@@ -36,17 +45,42 @@ from dataclasses import dataclass
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-_OUTPUT = _REPO_ROOT / "paper" / "generated" / "defun-benchmark.tex"
 
 _RECURSION_LIMIT = 1_000_000
 
-# (display name, app, input key, heavy). Heavy cells are part of the generated fragment.
+
+def _output_tag() -> str:
+    """The interpreter tag for the generated filename: ``pypy`` on PyPy, else ``py311``/``py312``/``py313``.
+
+    PyPy 3.11 and CPython 3.11 share ``sys.version_info`` and therefore the committed artifacts (the
+    ``py311`` tag of ``tablambda._defun_runtime._python_tag``), but their measured numbers diverge, so the
+    fragment filename keeps them apart.
+    """
+    if sys.implementation.name == "pypy":
+        return "pypy"
+    from tablambda._defun_runtime import _python_tag
+
+    return _python_tag()
+
+
+def _output_path() -> Path:
+    """Where this interpreter's fragment is written: ``defun-benchmark-<tag>.tex`` in the generated dir.
+
+    The directory is ``$TABLAMBDA_GENERATED_DIR`` when set (so a read-only Nix-store venv can target the
+    working tree), else ``paper/generated`` beside the editable source.
+    """
+    override = os.environ.get("TABLAMBDA_GENERATED_DIR")
+    directory = Path(override) if override else _REPO_ROOT / "paper" / "generated"
+    return directory / f"defun-benchmark-{_output_tag()}.tex"
+
+# (display name, app, input key). Every cell is mandatory, including the bootstrap; there is no light
+# subset. The bootstrap input is committed for 3.11/PyPy only, so other interpreters fail loudly.
 _CELLS = [
-    ("edit-distance kitten/sitting", "editdistance", "kitten:sitting", False),
-    ("edit-distance intention/execution", "editdistance", "intention:execution", False),
-    ("DEFUN on identity", "defun", "identity", False),
-    ("DEFUN on S", "defun", "S", False),
-    ("DEFUN on DEFUN (bootstrap)", "defun", "defun", True),
+    ("edit-distance kitten/sitting", "editdistance", "kitten:sitting"),
+    ("edit-distance intention/execution", "editdistance", "intention:execution"),
+    ("DEFUN on identity", "defun", "identity"),
+    ("DEFUN on S", "defun", "S"),
+    ("DEFUN on DEFUN (bootstrap)", "defun", "defun"),
 ]
 
 # Compiled input artifacts to import per cell input key.
@@ -231,8 +265,14 @@ def _worker(approach: str, app: str, input_key: str) -> None:
 def _spawn(approach: str, app: str, input_key: str) -> Cell:
     completed = subprocess.run(
         [sys.executable, "-m", "tablambda_examples._benchmark", "--measure", approach, app, input_key],
-        capture_output=True, text=True, check=True,
+        capture_output=True, text=True,
     )
+    if completed.returncode != 0:
+        raise ValueError(
+            f"worker {approach} {app}:{input_key} failed (exit {completed.returncode}); the full "
+            f"benchmark needs every committed artifact, and the bootstrap input input_quote_defun "
+            f"is committed for CPython 3.11 and PyPy 3.11 only:\n{completed.stderr}"
+        )
     payload = json.loads(completed.stdout.strip().splitlines()[-1])
     return Cell(
         seconds=payload["seconds"], peak_mb=payload["peak_mb"],
@@ -241,9 +281,15 @@ def _spawn(approach: str, app: str, input_key: str) -> Cell:
 
 
 def comparison_rows() -> "list[ComparisonRow]":
-    """Run every cell both ways (each in its own subprocess) and return the comparison rows."""
+    """Run every cell both ways (each in its own subprocess) and return the comparison rows.
+
+    Every cell is mandatory, including the heavy bootstrap; there is no light subset. The bootstrap
+    input ``input_quote_defun`` is built only by the pre-3.12 recursion model, so it is committed for
+    3.11/PyPy alone; on 3.12+ the bootstrap worker cannot import it and ``_spawn`` fails loudly, rather
+    than this emitting a partial fragment.
+    """
     rows: "list[ComparisonRow]" = []
-    for name, app, input_key, heavy in _CELLS:
+    for name, app, input_key in _CELLS:
         interpreter = _spawn("interpreter", app, input_key)
         compiled = _spawn("compiled", app, input_key)
         assert interpreter.digest == compiled.digest, (
@@ -277,11 +323,11 @@ def _tabular(rows: "list[ComparisonRow]") -> str:
     ])
 
 
-def benchmark_fragment() -> str:
-    """The committed LaTeX fragment: the interpreted-vs-compiled comparison tabular and a header."""
-    rows = comparison_rows()
+def render_fragment(rows: "list[ComparisonRow]") -> str:
+    """The committed LaTeX fragment for already-measured rows: a header and the comparison tabular."""
     parts = [
         "% Generated by tablambda_examples._benchmark (tablambda-defun-benchmark). Do not edit.",
+        f"% Interpreter: {platform.python_implementation()} {platform.python_version()}.",
         "% Each application run interpreted vs compiled (defunctionalized, imported pre-compiled). Time (s)",
         "% and peak RSS (MB) are a measured snapshot; tabled-object counts (interned nodes vs interned",
         "% Thunks+closures) and the ratio columns (interp/defun) are the comparison. A ratio > 1 means the",
@@ -289,6 +335,11 @@ def benchmark_fragment() -> str:
         _tabular(rows),
     ]
     return "\n".join(parts) + "\n"
+
+
+def benchmark_fragment() -> str:
+    """The committed LaTeX fragment: measure the matrix, then render the comparison tabular and header."""
+    return render_fragment(comparison_rows())
 
 
 def main() -> None:
@@ -309,9 +360,10 @@ def main() -> None:
             f"{row.speedup:>5.2f}  {row.interpreter.peak_mb:>7.0f} {row.compiled.peak_mb:>7.0f}  "
             f"{row.interpreter.tabled:>9} {row.compiled.tabled:>9} {row.tabled_ratio:>5.2f}"
         )
-    _OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    _OUTPUT.write_text(benchmark_fragment())
-    print(f"wrote {_OUTPUT}")
+    output = _output_path()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(render_fragment(rows))
+    print(f"wrote {output}")
 
 
 if __name__ == "__main__":

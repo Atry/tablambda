@@ -1128,7 +1128,8 @@ For instance, one step of weak-head reduction in the pure $\lambda$-calculus is 
 % App（编译器）：从原 parked Implementation/Evaluation 提炼——编译器机制(defunctionalization) + content-addressed
 %   closures（更粗但可判定的相等）+ 自举 benchmark(tab:defun) + read-back 局限 + 编译输出例子。§4.3
 %   (sec:design-space) 高层总结本附录（审稿人不读附录，故 §4.3 正文已带关键事实：更粗相等⇒更高命中率、~8x）。
-%   tab:defun 由 generated/defun-benchmark 渲染、编译输出由 generated/compiler-examples 渲染（均生成、非手写）。
+%   tab:defun 由 generated/defun-benchmark-py311 渲染（完整 benchmark 含 bootstrap，仅 CPython 3.11 与 PyPy 能跑，各
+%   一份 defun-benchmark-<tag>.tex，正文取 CPython 3.11 那份）、编译输出由 generated/compiler-examples 渲染（均生成、非手写）。
 \section{\bilingual{The Compiler}{编译器}}\label{app:compiler}
 % =====================================================================
 \ifTablambdaChinese
@@ -1158,7 +1159,7 @@ The compiler's first benchmark is the construction applied to itself. The compil
   \label{tab:defun}
   \centering\footnotesize
   \setlength{\tabcolsep}{4pt}
-  \resizebox{\textwidth}{!}{\input{generated/defun-benchmark}}
+  \resizebox{\textwidth}{!}{\input{generated/defun-benchmark-py311}}
 \end{table*}
 
 \ifTablambdaChinese

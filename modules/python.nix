@@ -51,34 +51,68 @@
         localOverrides
       ]);
 
-      # --- PyPy runtime for tablambda-benchmark ---
-      # The benchmark is CPU-bound interpreter/compiler work (deep tree walks, beta reduction),
-      # the workload PyPy's JIT accelerates. pkgs.pypy3 is PyPy 7.3.20 (Python 3.11),
-      # satisfying requires-python >= 3.11.
-      pythonPypy = pkgs.pypy3;
-
-      pythonSetPypy = (pkgs.callPackage inputs.pyproject-nix.build.packages {
-        python = pythonPypy;
-      }).overrideScope (lib.composeManyExtensions [
-        inputs.pyproject-build-systems.overlays.wheel
-        (workspace.mkPyprojectOverlay {
-          sourcePreference = "wheel";
-          dependencies = workspace.deps.default;
-        })
-        (inputs.uv2nix_hammer_overrides.overrides pkgs)
-        genericPyprojectOverrides
-        localOverrides
-      ]);
-
-      tablambdaBenchmarkPypy =
-        (pythonSetPypy.mkVirtualEnv "tablambda-benchmark-pypy"
+      # --- Per-interpreter benchmark virtualenvs ---
+      # Results differ markedly across interpreters, so the benchmark fragment is generated once per
+      # interpreter (paper/generated/defun-benchmark-<tag>.tex). Each venv is the workspace's default
+      # dependencies installed for one interpreter; the benchmark spawns its per-cell workers with that
+      # venv's interpreter (sys.executable). The benchmark is CPU-bound interpreter/compiler work (deep
+      # tree walks, beta reduction), the workload PyPy's JIT accelerates; pkgs.pypy3 is PyPy 7.3.20
+      # (Python 3.11), satisfying requires-python >= 3.11.
+      mkBenchmarkVenv = { python, name }:
+        let
+          benchmarkSet = (pkgs.callPackage inputs.pyproject-nix.build.packages {
+            inherit python;
+          }).overrideScope (lib.composeManyExtensions [
+            inputs.pyproject-build-systems.overlays.wheel
+            (workspace.mkPyprojectOverlay {
+              sourcePreference = "wheel";
+              dependencies = workspace.deps.default;
+            })
+            (inputs.uv2nix_hammer_overrides.overrides pkgs)
+            genericPyprojectOverrides
+            localOverrides
+          ]);
+        in
+        (benchmarkSet.mkVirtualEnv name
           (builtins.removeAttrs workspace.deps.default [ "tablambda-workspace" ])).overrideAttrs
         (old: {
           venvIgnoreCollisions = [ "*" ];
           meta = (old.meta or { }) // {
-            mainProgram = "tablambda-benchmark";
+            mainProgram = "tablambda-defun-benchmark";
           };
         });
+
+      # Every interpreter gets a venv and a regen target, but only CPython 3.11 and PyPy 3.11 can run the
+      # full benchmark: the mandatory bootstrap input is committed for the py311 tag alone (3.12+ cannot
+      # build it). On 3.12/3.13 the regen target therefore fails loudly rather than emitting a partial
+      # fragment.
+      benchmarkVenvs = {
+        py311 = mkBenchmarkVenv { python = pkgs.python311; name = "tablambda-benchmark-py311"; };
+        py312 = mkBenchmarkVenv { python = pkgs.python312; name = "tablambda-benchmark-py312"; };
+        py313 = mkBenchmarkVenv { python = pkgs.python313; name = "tablambda-benchmark-py313"; };
+        pypy = mkBenchmarkVenv { python = pkgs.pypy3; name = "tablambda-benchmark-pypy"; };
+      };
+
+      # `nix run .#regen-defun-benchmark-<tag>` measures the matrix on that interpreter and writes
+      # paper/generated/defun-benchmark-<tag>.tex into the working tree. The venv is read-only in the
+      # Nix store, so the output directory is passed through $TABLAMBDA_GENERATED_DIR, resolved from the
+      # git checkout (the generated dir is tablambda/paper/generated in the monorepo, paper/generated in
+      # the standalone subrepo).
+      mkRegen = tag: venv: pkgs.writeShellApplication {
+        name = "regen-defun-benchmark-${tag}";
+        runtimeInputs = [ pkgs.git ];
+        text = ''
+          repo_root=$(git rev-parse --show-toplevel)
+          if [ -d "$repo_root/tablambda/paper/generated" ]; then
+            generated_dir="$repo_root/tablambda/paper/generated"
+          else
+            generated_dir="$repo_root/paper/generated"
+          fi
+          export TABLAMBDA_GENERATED_DIR="$generated_dir"
+          echo "regenerating defun-benchmark-${tag}.tex in $generated_dir" >&2
+          exec ${lib.getExe venv}
+        '';
+      };
 
       # --- Supplementary material for double-blind review ---
 
@@ -233,7 +267,11 @@
       };
     in {
       tablambdaPyprojectOverrides = genericPyprojectOverrides;
-      packages.tablambda-benchmark-pypy = tablambdaBenchmarkPypy;
+      packages.tablambda-benchmark-pypy = benchmarkVenvs.pypy;
+      packages.regen-defun-benchmark-py311 = mkRegen "py311" benchmarkVenvs.py311;
+      packages.regen-defun-benchmark-py312 = mkRegen "py312" benchmarkVenvs.py312;
+      packages.regen-defun-benchmark-py313 = mkRegen "py313" benchmarkVenvs.py313;
+      packages.regen-defun-benchmark-pypy = mkRegen "pypy" benchmarkVenvs.pypy;
       packages.tablambda-supplementary-material = tablambdaSupplementaryMaterial;
     };
 }

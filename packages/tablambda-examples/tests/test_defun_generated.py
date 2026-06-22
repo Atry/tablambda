@@ -8,6 +8,7 @@ heavier tests are marked ``slow``.
 from __future__ import annotations
 
 import importlib
+import sys
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,60 @@ from tablambda_examples._artifacts import module_dotted_name
 
 
 _COMPILER_MODULE = module_dotted_name("compiler")
+
+# The full benchmark runs under whichever interpreter invokes it. The benchmark tests are parametrized
+# over the four interpreters so each one's expected status is declared: a case runs only under its own
+# interpreter (the rest skip via skipif), and CPython 3.12/3.13 cannot build the mandatory bootstrap
+# input input_quote_defun, so there the benchmark fails loudly and the case is an expected failure.
+_RUNNING_INTERPRETER = (
+    "pypy" if sys.implementation.name == "pypy"
+    else f"py{sys.version_info.major}{sys.version_info.minor}"
+)
+
+_BENCHMARK_INTERPRETERS = [
+    pytest.param(
+        "py311",
+        marks=pytest.mark.skipif(
+            _RUNNING_INTERPRETER != "py311",
+            reason=f"benchmark runs under py311; current interpreter is {_RUNNING_INTERPRETER}",
+        ),
+    ),
+    pytest.param(
+        "py312",
+        marks=[
+            pytest.mark.skipif(
+                _RUNNING_INTERPRETER != "py312",
+                reason=f"benchmark runs under py312; current interpreter is {_RUNNING_INTERPRETER}",
+            ),
+            pytest.mark.xfail(
+                reason="py312 cannot build the bootstrap input input_quote_defun; the full benchmark "
+                "fails loudly",
+                strict=True,
+            ),
+        ],
+    ),
+    pytest.param(
+        "py313",
+        marks=[
+            pytest.mark.skipif(
+                _RUNNING_INTERPRETER != "py313",
+                reason=f"benchmark runs under py313; current interpreter is {_RUNNING_INTERPRETER}",
+            ),
+            pytest.mark.xfail(
+                reason="py313 cannot build the bootstrap input input_quote_defun; the full benchmark "
+                "fails loudly",
+                strict=True,
+            ),
+        ],
+    ),
+    pytest.param(
+        "pypy",
+        marks=pytest.mark.skipif(
+            _RUNNING_INTERPRETER != "pypy",
+            reason=f"benchmark runs under pypy; current interpreter is {_RUNNING_INTERPRETER}",
+        ),
+    ),
+]
 
 
 def test_committed_compiled_compiler_loads() -> None:
@@ -47,14 +102,19 @@ def test_self_hosted_compiler_is_faithful() -> None:
         assert compile_with_defun(engine, node) == defunctionalize(node)
 
 
-def test_defun_benchmark_metrics_are_stable(snapshot) -> None:
+@pytest.mark.slow
+@pytest.mark.parametrize("interpreter", _BENCHMARK_INTERPRETERS)
+def test_defun_benchmark_metrics_are_stable(interpreter: str, snapshot) -> None:
     """The benchmark's DETERMINISTIC metrics (tabled-object counts) do not drift, and per cell the
     interpreted and compiled results agree.
 
     Time and memory are a measured snapshot and excluded here; the interned-object counts capture the
-    coarser, compiled-form tabling, which must stay stable. Running each cell spawns subprocesses, so
-    this covers only the light (non-bootstrap) cells.
+    coarser, compiled-form tabling, which must stay stable. The benchmark runs every cell including the
+    heavy bootstrap (minutes); the counts are identical on CPython 3.11 and PyPy 3.11 (shared py311
+    artifacts), so one snapshot covers both.
     """
+    assert interpreter == _RUNNING_INTERPRETER
+
     from tablambda_examples._benchmark import comparison_rows
 
     deterministic = {
@@ -75,8 +135,16 @@ def test_committed_compiler_examples_matches_generator() -> None:
     assert _LATEX_OUTPUT.read_text() == compiler_examples_fragment()
 
 
-def test_defun_benchmark_fragment_renders() -> None:
-    """The benchmark renders a LaTeX tabular fragment (the committed paper input)."""
+@pytest.mark.slow
+@pytest.mark.parametrize("interpreter", _BENCHMARK_INTERPRETERS)
+def test_defun_benchmark_fragment_renders(interpreter: str) -> None:
+    """The full benchmark runs and renders a LaTeX tabular fragment (the committed paper input).
+
+    This measures every cell including the heavy bootstrap (minutes); on 3.12/3.13 the bootstrap input
+    is absent and it fails loudly, an expected failure declared in the parametrization.
+    """
+    assert interpreter == _RUNNING_INTERPRETER
+
     from tablambda_examples._benchmark import benchmark_fragment
 
     fragment = benchmark_fragment()
