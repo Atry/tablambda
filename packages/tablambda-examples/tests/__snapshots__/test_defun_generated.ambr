@@ -1,5 +1,34 @@
 # serializer version: 1
-# name: test_defun_benchmark_metrics_are_stable[defun_benchmark_metrics]
+# name: test_defun_benchmark_metrics_are_stable[py311][defun_benchmark_metrics]
+  dict({
+    'DEFUN on DEFUN (bootstrap)': dict({
+      'compiled_tabled': 981693,
+      'interpreter_tabled': 5003844,
+      'results_agree': True,
+    }),
+    'DEFUN on S': dict({
+      'compiled_tabled': 3919,
+      'interpreter_tabled': 22922,
+      'results_agree': True,
+    }),
+    'DEFUN on identity': dict({
+      'compiled_tabled': 1394,
+      'interpreter_tabled': 11754,
+      'results_agree': True,
+    }),
+    'edit-distance intention/execution': dict({
+      'compiled_tabled': 8986,
+      'interpreter_tabled': 14747,
+      'results_agree': True,
+    }),
+    'edit-distance kitten/sitting': dict({
+      'compiled_tabled': 6443,
+      'interpreter_tabled': 10636,
+      'results_agree': True,
+    }),
+  })
+# ---
+# name: test_defun_benchmark_metrics_are_stable[pypy][defun_benchmark_metrics]
   dict({
     'DEFUN on DEFUN (bootstrap)': dict({
       'compiled_tabled': 981693,

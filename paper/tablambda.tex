@@ -796,7 +796,7 @@ Solving $\Omega$ (Algorithm~\ref{alg:whnf}) puts it on the stack and runs the we
 %   ① insight：方法把 λ-term reify 成一阶数据、以结构同一性为 tabling 键 ⇒ term 的结构【就是】solver 构造的
 %      那张图；算法怎么编码（哪些子问题重合）决定图的大小、从而时空成本——结构是一个杠杆，相等性是另一个杠杆。
 %   ② 编译器桥接：编译本身也是图→图的余代数方程，同一解释器求解之 ⇒ 自举 Python 编译器；其特点（content-
-%      addressed closures / 更粗相等性 / ~8x bootstrap）留 §4.3。结尾 "we take up next" 是有意的章节过渡
+%      addressed closures / 更粗相等性 / ~5x bootstrap）留 §4.3。结尾 "we take up next" 是有意的章节过渡
 %      preview（forward-ref 例外）；§4.3 落地后把它改成 \ref。
 %
 % 【段落首尾的衔接，作者明确】§4.2 是讲"图"的，但要与上一段（§4.1 的余代数）和下一段（§4.3）接续：
@@ -826,8 +826,8 @@ The interpreter folds a term's unfolding onto its repeated states, so an infinit
 %      ceiling（app:ceiling 已证，且证了 de Bruijn 同一性只达子片段、有 gap）。【能折叠多深取决于编码】，故解释器与
 %      编译器都是谱系上的点、【都不是最优】（最优=behavioral、不可判定）；正文务必不暗示二者 optimal。
 %      【本节最重要的点】编译器编码更粗 ⇒ 折叠命中率更高（把解释器分开的 state 也折成一个），benchmark 正好证明
-%      （tab:defun 的 tabled-objects 列：编译形式少 ~5x 个对象），且【每个输入返回同一张图】（同解）；故 ~8x 更快、
-%      ~3.5x 更省内存。
+%      （tab:defun 的 tabled-objects 列：编译形式少 ~5x 个对象），且【每个输入返回同一张图】（同解）；故在 CPython
+%      3.11 上 ~5x 更快、~3x 更省内存（时间/内存随解释器变：PyPy 自举约 1.0x；tabled 倍数是确定的）。
 %   ② 归约旋钮：structure map 由 reduction function 呈现（sec:reductions）；换 reduction ⇒ 另一种 tree semantics。
 %      框架【能】处理别的 reduction（含 Böhm），我们只是【选择不在此展开 Böhm】；正文只泛说"换 reduction 固定另一种
 %      lazy tree semantics"，【不写成 limitation】。
@@ -845,20 +845,20 @@ The interpreter folds a term's unfolding onto its repeated states, so an infinit
 %   已正面陈述）；这里只平述编译器用标准 defunctionalization，不褒不贬。
 % 【"standard" 的落点（本轮 blind-read 后）】"standard" 已并入引入处 "The compiler takes the standard
 %   defunctionalized form …"；原句尾再补一句 "The compiler's coarser encoding is the standard defunctionalization."
-%   被 blind-read 判为接在 benchmark 后的【悬空 non-sequitur】，已删。段落收在 benchmark（~8x faster）。
+%   被 blind-read 判为接在 benchmark 后的【悬空 non-sequitur】，已删。段落收在 benchmark（CPython 3.11 上 ~5x faster）。
 % 【标题（作者定）】"Alternative Operational Semantics"，与 §2 "A Tabled Operational Semantics" 平行：§2 是被证明的
 %   那一个，§4.3 讨论【替代】（更粗的 tabling / 换 reduction），多为未证、属 Discussion 性质。勿用 "Choosing"（像已
 %   定论的设计选择，过度断言）。
 % 原则：不复述 §2 interning / §4.2 graph（只 lean）；对 app:ceiling、app:compiler 只【高层总结】（审稿人不读附录），
-%   关键事实（~5x/~8x、coarser-decidable）写进正文。结尾 "a family ... over a single solver" 收束到 Conclusion。
+%   关键事实（自举 tabled ~5x、CPython 3.11 上约快 ~5x、coarser-decidable）写进正文。结尾 "a family ... over a single solver" 收束到 Conclusion。
 % =====================================================================
 \subsection{\bilingual{Alternative Operational Semantics}{替代的操作语义}}\label{sec:design-space}
 \ifTablambdaChinese
-\textsf{Tabled} 折叠两个它能判定为相同的状态,而它据以折叠的可判定同一性,始终是状态的某个一阶编码的结构同一性;所选择的就是这个编码,即结构同一性\emph{是关于什么的}。解释器取 de Bruijn 项本身,即第~\ref{sec:bridge} 节的内化,也是这类同一性中最细的一种,由一次指针测试判定。编译器取标准的去函数化(defunctionalized)形式,以「函数体的散列值,加上按位置而非按绑定深度编号的自由变量」来命名每个闭包,于是仅在捕获绑定深度上不同的抽象会共享同一编码而被折叠到一起:还是结构同一性,只是如今针对一个更粗的表示,仍是常数时间的测试(附录~\ref{app:compiler})。在一切编码之外是行为相等(behavioral equality),它折叠行为相同的状态、能达到整个有理片段,但在 $\lambda$-项上它就是 $\beta$-相等、不可判定,即附录~\ref{sec:tabling} 的有理性上限——该附录也表明 de Bruijn 同一性够不到这个上限。因此,一个可判定的同一性能粗到何种程度,取决于计算如何被编码为一阶数据;而编译器的编码会折叠解释器所分开的状态:附录~\ref{app:compiler} 直接测量了这更高的命中率,在自编译自举上内化对象约少五倍,于是自举随之快约八倍、内存只用其中一小部分。
+\textsf{Tabled} 折叠两个它能判定为相同的状态,而它据以折叠的可判定同一性,始终是状态的某个一阶编码的结构同一性;所选择的就是这个编码,即结构同一性\emph{是关于什么的}。解释器取 de Bruijn 项本身,即第~\ref{sec:bridge} 节的内化,也是这类同一性中最细的一种,由一次指针测试判定。编译器取标准的去函数化(defunctionalized)形式,以「函数体的散列值,加上按位置而非按绑定深度编号的自由变量」来命名每个闭包,于是仅在捕获绑定深度上不同的抽象会共享同一编码而被折叠到一起:还是结构同一性,只是如今针对一个更粗的表示,仍是常数时间的测试(附录~\ref{app:compiler})。在一切编码之外是行为相等(behavioral equality),它折叠行为相同的状态、能达到整个有理片段,但在 $\lambda$-项上它就是 $\beta$-相等、不可判定,即附录~\ref{sec:tabling} 的有理性上限——该附录也表明 de Bruijn 同一性够不到这个上限。因此,一个可判定的同一性能粗到何种程度,取决于计算如何被编码为一阶数据;而编译器的编码会折叠解释器所分开的状态:附录~\ref{app:compiler} 直接测量了这更高的命中率,在自编译自举上内化对象约少五倍,于是自举在 CPython 3.11 上随之快约五倍、内存只用其中一小部分。
 
 归约函数是第二个选择。\textsf{Tabled} 从任何呈现这张一层映射的归约中读出一套树语义;弱头归约呈现的是 Lévy--Longo 树,而另一种归约则固定另一套惰性树语义,全都由同一个 \textsf{Tabled} 计算。于是纯 $\lambda$-演算不是一门语言,而是一族,以它所制表的相等性和它所运行的归约为索引,建立在单一的 tabled 求值之上。
 \else
-\textsf{Tabled} folds two states it can decide are the same, and the decidable identity it folds by is always the structural identity of some first-order encoding of the state; the choice is the encoding, structural identity \emph{of what}. The interpreter takes the de Bruijn term itself, the interning of Section~\ref{sec:bridge} and the finest such identity, decided by a pointer test. The compiler takes the standard defunctionalized form, naming each closure by a hash of its body with its free variables numbered by position rather than by binding depth, so abstractions differing only in the depth at which they bind a capture share an encoding and fold together: the same structural identity, now of a coarser representation, still a constant-time test (Appendix~\ref{app:compiler}). Beyond every encoding lies behavioral equality, which folds states with equal behavior and attains the whole rational fragment but on $\lambda$-terms is $\beta$-equality and undecidable, the rational ceiling of Appendix~\ref{sec:tabling}, which also shows the de Bruijn identity falling short of it. How coarse a decidable identity reaches is thus set by how the computation is encoded as first-order data, and the compiler's encoding folds states the interpreter keeps apart: Appendix~\ref{app:compiler} measures the higher hit rate directly, about five times fewer interned objects on the self-compilation bootstrap, and the bootstrap then runs about eight times faster and in a fraction of the memory.
+\textsf{Tabled} folds two states it can decide are the same, and the decidable identity it folds by is always the structural identity of some first-order encoding of the state; the choice is the encoding, structural identity \emph{of what}. The interpreter takes the de Bruijn term itself, the interning of Section~\ref{sec:bridge} and the finest such identity, decided by a pointer test. The compiler takes the standard defunctionalized form, naming each closure by a hash of its body with its free variables numbered by position rather than by binding depth, so abstractions differing only in the depth at which they bind a capture share an encoding and fold together: the same structural identity, now of a coarser representation, still a constant-time test (Appendix~\ref{app:compiler}). Beyond every encoding lies behavioral equality, which folds states with equal behavior and attains the whole rational fragment but on $\lambda$-terms is $\beta$-equality and undecidable, the rational ceiling of Appendix~\ref{sec:tabling}, which also shows the de Bruijn identity falling short of it. How coarse a decidable identity reaches is thus set by how the computation is encoded as first-order data, and the compiler's encoding folds states the interpreter keeps apart: Appendix~\ref{app:compiler} measures the higher hit rate directly, about five times fewer interned objects on the self-compilation bootstrap, and on CPython 3.11 the bootstrap then runs about five times faster and in a fraction of the memory.
 
 The reduction function is the second choice. \textsf{Tabled} reads a tree semantics off whatever reduction presents the one-layer map; weak-head reduction presents the L\'evy--Longo tree, and a different reduction fixes a different lazy tree semantics, all computed by the same \textsf{Tabled}. The pure $\lambda$-calculus is thus not one language but a family, indexed by the equality it tables and the reduction it runs, over a single tabled evaluation.
 \fi
@@ -1127,7 +1127,7 @@ For instance, one step of weak-head reduction in the pure $\lambda$-calculus is 
 % =====================================================================
 % App（编译器）：从原 parked Implementation/Evaluation 提炼——编译器机制(defunctionalization) + content-addressed
 %   closures（更粗但可判定的相等）+ 自举 benchmark(tab:defun) + read-back 局限 + 编译输出例子。§4.3
-%   (sec:design-space) 高层总结本附录（审稿人不读附录，故 §4.3 正文已带关键事实：更粗相等⇒更高命中率、~8x）。
+%   (sec:design-space) 高层总结本附录（审稿人不读附录，故 §4.3 正文已带关键事实：更粗相等⇒更高命中率，CPython 3.11 上自举约 5x）。
 %   tab:defun 由 generated/defun-benchmark-py311 渲染（完整 benchmark 含 bootstrap，仅 CPython 3.11 与 PyPy 能跑，各
 %   一份 defun-benchmark-<tag>.tex，正文取 CPython 3.11 那份）、编译输出由 generated/compiler-examples 渲染（均生成、非手写）。
 \section{\bilingual{The Compiler}{编译器}}\label{app:compiler}
@@ -1145,17 +1145,21 @@ The compiler is a second tabled reduction. It sends each sub-term of a quoted so
 The runtime is minimal: a \texttt{Thunk} carrier and an interning operator. The weak-head normal form of a \texttt{Thunk} is computed by the same memoized least-fixpoint mechanism the interpreter uses for silent reduction, so \texttt{Thunk} interning mirrors term interning: a recurring redex is one interned \texttt{Thunk}, reduced once, and the compiled program inherits the interpreter's cyclic-graph folding and its decision of non-productive loops as $\bot$. Closure classes are content-addressable: each class is named by a hash of its compiled body, with its capture fields numbered by position rather than by binding depth, so two source abstractions whose bodies have the same shape but capture variables at different depths compile to one class. This is the coarser, still decidable, identity of Section~\ref{sec:design-space}: it folds states the interpreter's per-node interning keeps apart.
 \fi
 
+% 本段的具体倍数取自 generated/defun-benchmark-py311.tex（CPython 3.11），与表 tab:defun 同源；用
+%   nix run .#regen-defun-benchmark-py311 重生成后，这里的"两倍半到近八倍/约五倍/约低三倍"要一并核对更新。
+%   时间与内存是单次快照，随运行和解释器而变，故只给约数；制表(tabled)倍数是确定的，故下一段可给稳定区间。
+%   PyPy 上自举加速比约为 1.0x（其 tracing JIT 把解释器也提速），这正是正文要提解释器版本、并对比 PyPy 的依据。
 \paragraph{\bilingual{The self-compilation bootstrap}{自编译自举}}
 \ifTablambdaChinese
-编译器的第一个基准是把这套构造应用于它自身。编译器是一个纯 $\lambda$-项;解释器用同一套 tabling 在它自己被引用的源上求解它;输出是一个 Python 程序。一个纯 $\lambda$-项把一张图(源项)变换成另一张图(编译后的抽象语法树),既不借助附加的递归构造、也不观察指针同一性,这正是图变换栖身于演算之内的证据。表~\ref{tab:defun} 连同若干更轻的项一并报告这次自举,每一项都以解释执行对照编译执行。编译形式在轻量项上大约快四到十五倍,在自举上约快八倍,且自举的峰值内存约低三倍半。
+编译器的第一个基准是把这套构造应用于它自身。编译器是一个纯 $\lambda$-项;解释器用同一套 tabling 在它自己被引用的源上求解它;输出是一个 Python 程序。一个纯 $\lambda$-项把一张图(源项)变换成另一张图(编译后的抽象语法树),既不借助附加的递归构造、也不观察指针同一性,这正是图变换栖身于演算之内的证据。表~\ref{tab:defun} 连同若干更轻的项一并报告这次自举,每一项都在 CPython 3.11 上以解释执行对照编译执行。编译形式在轻量项上大约快两倍半到近八倍,在自举上约快五倍,且自举的峰值内存约低三倍。这些时间与内存数字是单个解释器的一次快照、会随解释器而变,而制表对象的计数是确定的:在 PyPy 上,其追踪式即时编译器(tracing just-in-time compiler)会加速解释器本身,编译形式在自举上并不比解释执行更快,却仍然物化出同样少五倍的制表对象。
 \else
-The compiler's first benchmark is the construction applied to itself. The compiler is a pure $\lambda$-term; the interpreter solves it on its own quoted source by the same tabling; the output is a Python program. That a pure $\lambda$-term transforms one graph, the source term, into another, the compiled abstract syntax tree, without an added recursion construct and without observing pointer identity, is the evidence that graph transformation lives inside the calculus. Table~\ref{tab:defun} reports this bootstrap together with lighter terms, each run interpreted against compiled. The compiled form is roughly four to fifteen times faster on the light terms and about eight times faster on the bootstrap, with lower peak memory on the bootstrap by a factor of about three and a half.
+The compiler's first benchmark is the construction applied to itself. The compiler is a pure $\lambda$-term; the interpreter solves it on its own quoted source by the same tabling; the output is a Python program. That a pure $\lambda$-term transforms one graph, the source term, into another, the compiled abstract syntax tree, without an added recursion construct and without observing pointer identity, is the evidence that graph transformation lives inside the calculus. Table~\ref{tab:defun} reports this bootstrap together with lighter terms, each run interpreted against compiled on CPython 3.11. The compiled form is roughly two and a half to nearly eight times faster on the light terms and about five times faster on the bootstrap, with lower peak memory on the bootstrap by a factor of about three. These time and memory figures are a snapshot of a single interpreter and shift across interpreters, whereas the tabled-object counts are deterministic: on PyPy, whose tracing just-in-time compiler speeds the interpreter itself, the compiled form runs no faster than the interpreter on the bootstrap, yet it still materializes the same five times fewer tabled objects.
 \fi
 
 \begin{table*}
   \caption{\bilingual{Interpreted versus compiled execution. Each row runs one application interpreted (interned
     term nodes) against compiled (interned \texttt{Thunk}s and closures). \emph{Speedup}, \emph{memory
-  ratio}, and \emph{tabled ratio} compare interpreted to compiled; a ratio above one means the compiled form wins. Time and peak memory are a single measured snapshot, and the compiled column runs the program already compiled, so compilation time is excluded. The last row is the compiler compiling its own source.}{解释执行对比编译执行。每一行把一次应用以解释执行(内化的项节点)对照编译执行(内化的 \texttt{Thunk} 与闭包)。\emph{加速比}、\emph{内存比}、\emph{制表比}比较解释执行与编译执行;比值大于一意味着编译形式更优。时间与峰值内存是单次测量的快照,而编译那一列运行的是已经编译好的程序,故编译时间被排除在外。最后一行是编译器编译它自己的源代码。}}
+  ratio}, and \emph{tabled ratio} compare interpreted to compiled; a ratio above one means the compiled form wins. Time and peak memory are a single measured snapshot on CPython 3.11, and the compiled column runs the program already compiled, so compilation time is excluded. The last row is the compiler compiling its own source.}{解释执行对比编译执行。每一行把一次应用以解释执行(内化的项节点)对照编译执行(内化的 \texttt{Thunk} 与闭包)。\emph{加速比}、\emph{内存比}、\emph{制表比}比较解释执行与编译执行;比值大于一意味着编译形式更优。时间与峰值内存是在 CPython 3.11 上单次测量的快照,而编译那一列运行的是已经编译好的程序,故编译时间被排除在外。最后一行是编译器编译它自己的源代码。}}
   \label{tab:defun}
   \centering\footnotesize
   \setlength{\tabcolsep}{4pt}
