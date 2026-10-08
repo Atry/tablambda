@@ -179,3 +179,27 @@ class vg_1b49bc69f60c1e7c(Closure):
         return Thunk(a, a)
 compiled = vg_1b49bc69f60c1e7c()
 \end{lstlisting}
+
+\medskip\noindent\textbf{Depth-differing captures.}\quad $\lambda x.\, (\lambda y.\, x)\, (\lambda y.\, \lambda z.\, x)$
+\begin{lstlisting}
+@interned
+class vg_267c5a013e0be552(Closure):
+    cap_0: Closure
+
+    def __call__(self, a):
+        return self.cap_0
+
+@interned
+class vg_b96f08cff84409ba(Closure):
+    cap_0: Closure
+
+    def __call__(self, a):
+        return vg_267c5a013e0be552(self.cap_0)
+
+@interned
+class vg_e2357023df13e3d1(Closure):
+
+    def __call__(self, a):
+        return Thunk(vg_267c5a013e0be552(a), vg_b96f08cff84409ba(a))
+compiled = vg_e2357023df13e3d1()
+\end{lstlisting}

@@ -31,6 +31,9 @@ _GROUPS: "tuple[tuple[str, tuple[tuple[str, Builder], ...]], ...]" = (
     ("fixed point", (("Y", Y),)),
     ("Scott booleans", (("true", TRUE), ("false", FALSE), ("and", AND), ("or", OR))),
     ("Scott lists (nil is also the BinNat zero)", (("nil", SCOTT_NIL), ("cons", SCOTT_CONS))),
+    ("comparison verdicts (a verdict picks one of less, equal, greater)", (
+        ("less", binnat._LESS), ("equal", binnat._EQUAL), ("greater", binnat._GREATER),
+    )),
     ("BinNat bit operations", (
         ("one", binnat.BIN_ONE),
         ("not", binnat._not),
@@ -38,9 +41,6 @@ _GROUPS: "tuple[tuple[str, tuple[tuple[str, Builder], ...]], ...]" = (
         ("maj", binnat._majority),
         ("biteq", binnat._bit_equal),
         ("bitcmp", binnat._bit_compare),
-    )),
-    ("comparison verdicts (a verdict picks one of less, equal, greater)", (
-        ("less", binnat._LESS), ("equal", binnat._EQUAL), ("greater", binnat._GREATER),
     )),
     ("BinNat arithmetic and comparison", (
         ("iszero", binnat.BIN_IS_ZERO),

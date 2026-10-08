@@ -1,11 +1,11 @@
 """Generate the precise term-level trace of the cyclic stream, read off the real interpreter.
 
 The appendix carries the exact run; the body of Section~\\ref{sec:application} only narrates it. The trace
-mirrors the pseudocode of Section~\\ref{sec:bridge}: ``Out`` on a state runs ``WHNF`` (the head-redex
+mirrors the pseudocode of Section~\\ref{sec:bridge}: ``TabledWHNF`` on a state runs ``WHNF`` (the head-redex
 contractions that unfold ``Y`` and expose the Scott cons cell), tables the state, and recurses into the
 tail; the tail ``W·W`` is reached while it is still on the stack, so the solver closes a back edge. Every
-step is produced by ``_cyclic_zeros.walk`` over the real interned terms, the exposed layers asserted equal
-to ``weak_head_normalize``, never hand-written.
+step is produced by ``_cyclic_zeros.walk`` over the real interned terms, the weak head normal forms asserted
+equal to ``weak_head_normalize``, never hand-written.
 
 ``tablambda-cyclic-zeros-trace`` (``python -m tablambda_examples._cyclic_zeros_trace``) rewrites the
 committed ``paper/generated/cyclic-zeros-trace.tex``.

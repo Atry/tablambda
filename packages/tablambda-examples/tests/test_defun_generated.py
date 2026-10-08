@@ -118,17 +118,18 @@ def test_defun_benchmark_metrics_are_stable(tag: str, snapshot) -> None:
 
 @pytest.mark.parametrize("tag", _PY311_ARTIFACT_TAGS)
 def test_committed_compiler_examples_matches_generator(tag: str) -> None:
-    """The committed ``compiler-examples.tex`` is exactly what the examples generator produces now.
+    """The committed ``compiler-examples-<tag>.tex`` is exactly what the generator produces now.
 
     The generator unparses the compiled modules, whose formatting and content-addressed class names
-    differ across Python versions, so the committed fragment is the CPython 3.11 form; only CPython 3.11
-    and PyPy 3.11 (sharing the py311 tag) reproduce it byte for byte.
+    differ across Python versions, so the fragment is named by the version tag; only the py311 form
+    (shared by CPython 3.11 and PyPy 3.11) is committed and input by the paper. Under 3.12/3.13 the
+    tagged fragment does not exist, so this test fails there, the expected failure.
     """
     assert tag == _python_tag()
 
-    from tablambda_examples._examples import _LATEX_OUTPUT, compiler_examples_fragment
+    from tablambda_examples._examples import _latex_output, compiler_examples_fragment
 
-    assert _LATEX_OUTPUT.read_text() == compiler_examples_fragment()
+    assert _latex_output().read_text() == compiler_examples_fragment()
 
 
 @pytest.mark.slow

@@ -19,14 +19,18 @@ from tablambda._prelude import (
     FALSE,
     GAME_LEAF,
     IDENTITY,
+    IS_ZERO,
     KESTREL,
+    MAP,
     MAX_NODE,
     MIN_NODE,
     MINIMAX,
+    ONE,
     OR,
     SCOTT_CONS,
     SCOTT_NIL,
     SELF_APPLY,
+    SUCC,
     TREE_ANY,
     TREE_LEAF,
     TREE_NODE,
@@ -48,6 +52,100 @@ CYCLIC_ZEROS: Node = build(app(Y, app(SCOTT_CONS, ZERO)))
 
 # letrec x = x : an unproductive head cycle, written Y (lambda x. x).
 LOOP: Node = build(app(Y, IDENTITY))
+
+# The ordinary map, nothing cycle-aware in it, over the cyclic stream: interning folds the
+# rebuilt tail application, so the result is the finite circle of ones.
+CYCLIC_ONES: Node = make_app(build(app(MAP, SUCC)), CYCLIC_ZEROS)
+
+# =====================================================================
+# Lexical analysis: the even-parity DFA run as a fold over the input.
+#
+# The even state and the symbol a are encoded as TRUE, the odd state and b as FALSE, both
+# two-way selectors; delta steps the state, run folds it through the word, accepts reads it.
+# =====================================================================
+
+DFA_DELTA: Builder = lam(lambda state: lam(lambda symbol: app(
+    app(state, app(app(symbol, FALSE), TRUE)),
+    app(app(symbol, TRUE), FALSE),
+)))
+DFA_ACCEPTS: Builder = lam(lambda state: app(app(state, TRUE), FALSE))
+DFA_RUN: Builder = app(Y, lam(lambda self_recursion: lam(lambda state: lam(lambda word: app(
+    app(
+        word,
+        lam(lambda head: lam(lambda tail: app(
+            app(self_recursion, app(app(DFA_DELTA, state), head)),
+            tail,
+        ))),
+    ),
+    state,
+)))))
+
+
+def parity_word(symbols_are_a: "tuple[bool, ...]") -> Builder:
+    """A word over the two-symbol alphabet as a Scott list, ``True`` encoding the symbol a."""
+    word: Builder = SCOTT_NIL
+    for symbol_is_a in reversed(symbols_are_a):
+        word = app(app(SCOTT_CONS, TRUE if symbol_is_a else FALSE), word)
+    return word
+
+
+def dfa_accepts_word(symbols_are_a: "tuple[bool, ...]") -> Node:
+    """The term ``accepts (run T w)`` for the word, TRUE exactly when the a-count is even."""
+    return build(app(DFA_ACCEPTS, app(app(DFA_RUN, TRUE), parity_word(symbols_are_a))))
+
+
+# =====================================================================
+# Unification and recursive types: coinductive stream equality as a guarded verdict stream.
+#
+# Equality of the behaviors two solution graphs unfold to is a greatest fixpoint (a comparison
+# that revisits itself has found no disagreement and should answer equal), while the evaluator
+# computes least fixpoints, so a bare Boolean equality stalls at bottom on an equal cycle.
+# Guarding the comparison closes the gap: the verdict stream exposes one per-level verdict
+# before recursing, so it is productive, the solver folds it into a finite cyclic graph, and
+# bisimilarity is read off that finite graph (no FALSE occurs), the same metalanguage
+# observation that draws every graph.
+# =====================================================================
+
+# eq01 x y: equality of the Church numerals 0 and 1, the streams' elements:
+# if iszero x then iszero y else not (iszero y).
+EQ01: Builder = lam(lambda x: lam(lambda y: app(
+    app(app(IS_ZERO, x), app(IS_ZERO, y)),
+    app(app(app(IS_ZERO, y), FALSE), TRUE),
+)))
+
+# eqS a b = cons (eq01 (head a) (head b)) (eqS (tail a) (tail b)); a length mismatch yields a
+# single FALSE verdict, and two empty streams yield the empty verdict stream.
+EQ_STREAM: Builder = app(Y, lam(lambda self_recursion: lam(lambda left: lam(lambda right: app(
+    app(
+        left,
+        lam(lambda left_head: lam(lambda left_tail: app(
+            app(
+                right,
+                lam(lambda right_head: lam(lambda right_tail: app(
+                    app(SCOTT_CONS, app(app(EQ01, left_head), right_head)),
+                    app(app(self_recursion, left_tail), right_tail),
+                ))),
+            ),
+            app(app(SCOTT_CONS, FALSE), SCOTT_NIL),
+        ))),
+    ),
+    app(
+        app(right, lam(lambda right_head: lam(lambda right_tail: app(app(SCOTT_CONS, FALSE), SCOTT_NIL)))),
+        SCOTT_NIL,
+    ),
+)))))
+
+EQ_STREAM_NODE: Node = build(EQ_STREAM)
+
+# The equirecursive pair: the same rational stream of zeros written two ways, and the
+# stream of ones it differs from at every level.
+CYCLIC_ZEROS_ETA: Node = build(app(Y, lam(lambda tail: app(app(SCOTT_CONS, ZERO), tail))))
+CYCLIC_ONES_DIRECT: Node = build(app(Y, app(SCOTT_CONS, ONE)))
+
+
+def stream_equality_verdicts(left: Node, right: Node) -> Node:
+    """The verdict stream ``eqS left right``, one Boolean per level of the two behaviors."""
+    return make_app(make_app(EQ_STREAM_NODE, left), right)
 
 
 # =====================================================================

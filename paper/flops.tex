@@ -1,0 +1,45 @@
+%% FLOPS entry: Springer LNCS, single-blind, the appendix following the references
+%% in the same PDF (FLOPS counts neither towards its page limit). The shared body
+%% tablambda.tex keeps every acmart-only command behind \ifTablambdaLNCS, so the
+%% acmart entries (preprint, submission, supplement) build unchanged.
+% 作者裁定（2026-10-07）：\anon 宏保留；"ACM命令能不能用条件隐藏？"——本入口只设开关、补上 acmart 原本代为
+%   加载的宏包与 \anon，正文不复制。
+%% The class line and the font and URL settings below follow Springer's official
+%% template (samplepaper.tex in the LaTeX2e proceedings template, llncs v2.24),
+%% checked against it on 2026-10-07: no paper-size option, T1 fonts, and URLs in
+%% Springer's eBook style when hyperref is loaded.
+\documentclass[runningheads]{llncs}
+
+%% samplepaper.tex: "T1 fonts will be used to generate the final print and online
+%% PDFs, so please use T1 fonts in your manuscript whenever possible."
+\usepackage[T1]{fontenc}
+
+\newif\ifTablambdaLNCS\TablambdaLNCStrue
+\newif\ifTablambdaBody\TablambdaBodytrue
+\newif\ifTablambdaAppendix\TablambdaAppendixtrue
+
+%% acmart loads these itself; llncs does not.
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{hyperref}
+%% samplepaper.tex: with hyperref, display URLs in blue roman font according to
+%% Springer's eBook style.
+\renewcommand\UrlFont{\color{blue}\rmfamily}
+\urlstyle{rm}
+%% The body writes \cite{a, b} with a space after each comma, which acmart's natbib
+%% ignores and plain \cite passes to BibTeX as part of the key; cite strips it (and
+%% sorts and compresses the numeric labels).
+\usepackage{cite}
+
+%% acmart's \anon[anonymous text]{real text}: FLOPS reviews single-blind, so the real
+%% text is shown.
+\newcommand{\anon}[2][]{#2}
+
+%% The LNCS text block is narrower than acmsmall's, and a line that starts with a long
+%% inline term has few spaces to stretch; a little last-resort stretch lets it break
+%% instead of running into the margin. It only acts where a line would be overfull.
+\setlength{\emergencystretch}{2em}
+
+\input{tablambda}

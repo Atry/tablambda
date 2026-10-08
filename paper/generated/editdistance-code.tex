@@ -67,6 +67,31 @@ h\,
 t
 \end{autobreak}
 \end{align*}
+\smallskip\noindent\textit{comparison verdicts (a verdict picks one of less, equal, greater)}\par\nobreak
+\begin{align*}
+\begin{autobreak}
+\mathtt{less} = \lambda \mathit{less}.\,
+\lambda \mathit{equal}.\,
+\lambda \mathit{greater}.\,
+\mathit{less}
+\end{autobreak}
+\end{align*}
+\begin{align*}
+\begin{autobreak}
+\mathtt{equal} = \lambda \mathit{less}.\,
+\lambda \mathit{equal}.\,
+\lambda \mathit{greater}.\,
+\mathit{equal}
+\end{autobreak}
+\end{align*}
+\begin{align*}
+\begin{autobreak}
+\mathtt{greater} = \lambda \mathit{less}.\,
+\lambda \mathit{equal}.\,
+\lambda \mathit{greater}.\,
+\mathit{greater}
+\end{autobreak}
+\end{align*}
 \smallskip\noindent\textit{BinNat bit operations}\par\nobreak
 \begin{align*}
 \begin{autobreak}
@@ -132,31 +157,6 @@ y\,
 (x\,
 \mathtt{greater}\,
 \mathtt{less})
-\end{autobreak}
-\end{align*}
-\smallskip\noindent\textit{comparison verdicts (a verdict picks one of less, equal, greater)}\par\nobreak
-\begin{align*}
-\begin{autobreak}
-\mathtt{less} = \lambda \mathit{less}.\,
-\lambda \mathit{equal}.\,
-\lambda \mathit{greater}.\,
-\mathit{less}
-\end{autobreak}
-\end{align*}
-\begin{align*}
-\begin{autobreak}
-\mathtt{equal} = \lambda \mathit{less}.\,
-\lambda \mathit{equal}.\,
-\lambda \mathit{greater}.\,
-\mathit{equal}
-\end{autobreak}
-\end{align*}
-\begin{align*}
-\begin{autobreak}
-\mathtt{greater} = \lambda \mathit{less}.\,
-\lambda \mathit{equal}.\,
-\lambda \mathit{greater}.\,
-\mathit{greater}
 \end{autobreak}
 \end{align*}
 \smallskip\noindent\textit{BinNat arithmetic and comparison}\par\nobreak

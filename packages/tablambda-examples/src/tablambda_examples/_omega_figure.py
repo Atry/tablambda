@@ -1,6 +1,6 @@
 """Generate the Omega figure for the paper from the real interpreter.
 
-The figure in the unproductive case study is the graph the solver returns for ``Omega``: a single state
+The figure in the Omega case study is the graph the solver returns for ``Omega``: a single state
 whose head reduction returns to itself, decided as bottom. ``_omega.solve_omega`` checks both facts off the
 implementation (the self-contraction and the bottom verdict) before this draws them, so the picture cannot
 drift from what the interpreter does. The paper floats and captions the picture; this module owns its body.
@@ -34,7 +34,7 @@ def render_tikz() -> str:
         "  \\node[state] (omega) at (0,0) {$\\Omega$};",
         "  \\draw[back] (omega) to[out=40,in=-40,looseness=8] node[right]{\\itshape $\\beta$} (omega);",
         "  \\node[anchor=north, align=center] at (0,-1.3) "
-        "{\\footnotesize re-enters on the stack, no layer exposed $\\;\\Longrightarrow\\;$ $\\bot$};",
+        "{\\footnotesize re-enters on the stack, no weak head normal form $\\;\\Longrightarrow\\;$ $\\bot$};",
         "\\end{tikzpicture}",
     ]
     return "\n".join(lines) + "\n"

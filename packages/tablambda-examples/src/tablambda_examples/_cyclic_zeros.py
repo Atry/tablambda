@@ -7,8 +7,9 @@ self-application ``Y`` produces, a freshly beta-substituted term and not the syn
 
 The fold is the genuine interning: each unfold rebuilds ``make_app(W, W)``, but hash-consing returns the
 existing node, so the solver's second call to ``W·W`` is a state it is already solving and it closes a
-back edge. We read this off the real interpreter: a faithful ``Out``/``WHNF`` walk over the real interned
-terms (real ``substitute``/``make_app``), asserting every exposed layer equals ``weak_head_normalize``,
+back edge. We read this off the real interpreter: a faithful ``TabledWHNF``/``WHNF`` walk over the real
+interned terms (real ``substitute``/``make_app``), asserting every weak head normal form equals
+``weak_head_normalize``,
 mirroring the pseudocode of Section~\\ref{sec:bridge}. Used by ``_cyclic_zeros_trace`` and
 ``_cyclic_zeros_figure``.
 """
@@ -158,7 +159,7 @@ def _salient(sequence: "tuple[Node, ...]") -> "tuple[str, ...]":
 
 
 def walk() -> "tuple[tuple[StreamStep, ...], tuple[StreamState, ...]]":
-    """Run a faithful ``Out``/``WHNF`` walk from ``r`` over the real interned terms, returning the
+    """Run a faithful ``TabledWHNF``/``WHNF`` walk from ``r`` over the real interned terms, returning the
     term-level trace lines and the solved states (for the figure). A tail already on the stack is a back
     edge (the cycle); the head value is read off the interpreter with ``_church_to_int``."""
     steps: "list[StreamStep]" = []
@@ -169,7 +170,7 @@ def walk() -> "tuple[tuple[StreamStep, ...], tuple[StreamState, ...]]":
     def state_name(node: Node) -> str:
         return _STATE_NAMES.get(id(node), render_term(node))
 
-    def out(node: Node, depth: int) -> None:
+    def demand(node: Node, depth: int) -> None:
         name = state_name(node)
         on_stack.append(id(node))
         solved.add(id(node))
@@ -181,7 +182,7 @@ def walk() -> "tuple[tuple[StreamStep, ...], tuple[StreamState, ...]]":
         head_value = _church_to_int(head)
         tail_name = state_name(tail)
 
-        steps.append(StreamStep(depth=depth, text=f"Out {name}:"))
+        steps.append(StreamStep(depth=depth, text=f"TabledWHNF {name}:"))
         steps.append(StreamStep(depth=depth + 1, text="WHNF:  " + "  ->  ".join(_salient(sequence))))
         steps.append(StreamStep(depth=depth + 1, text=f"compute {name} => cons {head_value} ({tail_name})"))
 
@@ -194,8 +195,8 @@ def walk() -> "tuple[tuple[StreamStep, ...], tuple[StreamState, ...]]":
         states.append(StreamState(name=name, head=head_value, tail_name=tail_name,
                                   tail_is_back_edge=tail_back_edge))
         if not tail_back_edge and id(tail) not in solved:
-            out(tail, depth + 1)
+            demand(tail, depth + 1)
         on_stack.pop()
 
-    out(STREAM, 0)
+    demand(STREAM, 0)
     return tuple(steps), tuple(states)

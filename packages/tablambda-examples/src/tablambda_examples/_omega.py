@@ -1,9 +1,9 @@
-"""Omega: an unproductive term the solver decides as bottom, traced at the term level.
+"""Omega: a term with no weak head normal form that the solver decides as bottom, traced at the term level.
 
 ``Omega = (lambda x. x x) (lambda x. x x)``: its one head beta-contraction returns ``Omega`` itself.
 Ordinary reduction loops forever; the solver does not. Because terms are interned the contractum is the
-*same node* as ``Omega``, so the solver re-enters a term still on its stack with no layer exposed, and its
-running approximation, bottom, is returned and stabilizes: the unproductive loop is decided as bottom in
+*same node* as ``Omega``, so the solver re-enters a term still on its stack with no weak head normal form
+reached, and its running approximation, bottom, is returned and stabilizes: Omega is decided as bottom in
 finite time. This module reads both facts off the implementation, the self-contraction (an interning
 identity) and the bottom verdict, and renders a term-level trace parallel to the cyclic-stream one, so the
 figure and trace generators (``_omega_figure``, ``_omega_trace``) report what the interpreter actually does.
@@ -33,10 +33,10 @@ def self_contraction() -> Node:
 
 def solve_omega() -> None:
     """Check the two observed facts the case study reports: ``Omega`` contracts to itself (the re-entry the
-    solver detects), and its weak head normal form is bottom (the unproductive loop, decided in finite time
-    because this call returns at all)."""
+    solver detects), and its weak head normal form is bottom (Omega has none, decided in finite time because this
+    call returns at all)."""
     assert self_contraction() is OMEGA, "Omega's head contractum is Omega itself (the same interned node)"
-    assert weak_head_normalize(OMEGA) is BOTTOM, "Omega is unproductive: its weak head normal form is bottom"
+    assert weak_head_normalize(OMEGA) is BOTTOM, "Omega has no weak head normal form: the solver returns bottom"
 
 
 def render_term(node: Node, binders: "tuple[str, ...]" = ()) -> str:
@@ -58,17 +58,17 @@ def render_term(node: Node, binders: "tuple[str, ...]" = ()) -> str:
 
 
 def trace_lines() -> "tuple[str, ...]":
-    """The term-level trace, read off the real interpreter: ``Out`` on ``Omega`` runs ``WHNF``, which
+    """The term-level trace, read off the real interpreter: ``TabledWHNF`` on ``Omega`` runs ``WHNF``, which
     contracts the head redex to ``Omega`` itself; the solver re-enters that term while it is still on the
-    stack with no layer exposed and returns bottom. Parallel to the cyclic-stream trace."""
+    stack with no weak head normal form reached and returns bottom. Parallel to the cyclic-stream trace."""
     contractum = self_contraction()
     assert contractum is OMEGA, "Omega's head contractum must be Omega itself"
     assert weak_head_normalize(OMEGA) is BOTTOM, "Omega's weak head normal form must be bottom"
     omega = render_term(OMEGA)
     contracted = render_term(contractum)
     return (
-        "Out Omega:",
+        "TabledWHNF Omega:",
         f"  WHNF:  {omega}  ->  {contracted}   (head redex contracts to Omega itself, the same interned term)",
-        "  re-enter Omega: on the stack, no layer exposed  ->  bottom",
+        "  re-enter Omega: on the stack, no weak head normal form  ->  bottom",
         "Omega = bottom",
     )

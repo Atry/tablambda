@@ -1,0 +1,7 @@
+# serializer version: 1
+# name: test_cyclic_zeros_layer_graph_folds_the_back_edge[cyclic_zeros_graph_summary]
+  'nodes=9 bottom_layers=0'
+# ---
+# name: test_edit_distance_layer_graph_is_finite[edit_distance_graph_summary]
+  'nodes=15 bottom_layers=0'
+# ---

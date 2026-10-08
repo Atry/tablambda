@@ -117,7 +117,20 @@ def compute_weak_head_normal_form(node: Node) -> Node | WeakHeadBottom:
             head = weak_head_normalize(function)
             match head:
                 case Var() | App():
-                    return node
+                    # FIXME: this exposes the real weak head normal form, and the fixpoint machinery
+                    # cannot yet carry it. `test_scott_ast_decodes_and_executes` raises
+                    # RecursionError from `fixpoints._core.fixpoint_cached_property` when it runs
+                    # against a cold cache, and passes when earlier tests have already normalized
+                    # the shared interned nodes; measured over `--randomly-seed` 1 to 6 on
+                    # `test_pyast.py`, seeds 1 and 3 fail and the other four pass.
+                    # The previous code returned `node`, the unreduced application, which hid this
+                    # bug behind a second one: the exposed layer was then a representative of the
+                    # weak head normal form rather than the normal form, and Lemma A.2 in the paper
+                    # was worded to match that. The same definition in SWI-Prolog, tabled and with
+                    # no interning, handles every term tried without recursion trouble, so the
+                    # defect is in this fixpoint machinery rather than in the definition. Fix the
+                    # recursion here; do not restore the representative.
+                    return make_app(head, argument)
                 case WeakHeadBottom.BOTTOM:
                     return BOTTOM
                 case _:

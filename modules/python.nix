@@ -129,6 +129,10 @@
           from = "github.com/Atry/MIXINv2";
           to = "github.com/anonymous-author/anonymous-repo";
         }
+        {
+          from = "github.com/Atry/tablambda";
+          to = "github.com/anonymous-author/tablambda";
+        }
       ];
 
       mkReplaceArgs = replacements:
@@ -153,10 +157,39 @@
         grep -rl "Anonymous, Author" ${dir} > /dev/null
       '';
 
+      # Windows compatibility of the produced zip. Two limits of Windows'
+      # built-in Compressed Folders (Explorer's zipfldr) are encoded here:
+      # MAX_PATH is 260 characters, and Explorer reports the WHOLE archive as
+      # empty when a single in-archive path reaches 260, while its extraction
+      # stops at the first destination path that exceeds MAX_PATH; the limit is
+      # set at 200 here so that extraction into a Windows folder path of up to
+      # about 60 characters still fits. Windows file systems are also
+      # case-insensitive, so two entries whose paths differ only by letter case
+      # overwrite each other on extraction.
+      assertWindowsReadableArchive = archive: ''
+        unzip -Z1 ${archive} > $TMPDIR/archive-entry-paths.txt
+
+        overlongEntryPaths=$(awk 'length($0) >= 200' $TMPDIR/archive-entry-paths.txt)
+        if [ -n "$overlongEntryPaths" ]; then
+          echo "FAIL: in-archive paths of 200 characters or more (Windows MAX_PATH is 260):" >&2
+          echo "$overlongEntryPaths" >&2
+          exit 1
+        fi
+
+        caseInsensitiveDuplicates=$(tr 'A-Z' 'a-z' < $TMPDIR/archive-entry-paths.txt | sort | uniq -d)
+        if [ -n "$caseInsensitiveDuplicates" ]; then
+          echo "FAIL: entry paths differing only by letter case (Windows file systems are case-insensitive):" >&2
+          while IFS= read -r collidingPath; do
+            grep -ixF -- "$collidingPath" $TMPDIR/archive-entry-paths.txt >&2
+          done <<< "$caseInsensitiveDuplicates"
+          exit 1
+        fi
+      '';
+
       # --- Supplementary material for the tablambda paper ---
-      # A standalone bundle of tablambda and its only workspace dependency,
-      # fixpoints, with a minimal virtual-workspace root so a reviewer can resolve and run
-      # it without the rest of MIXINv2.
+      # A standalone bundle of tablambda, tablambda-examples, and their only workspace
+      # dependency fixpoints, with a minimal virtual-workspace root so a reviewer can
+      # resolve and run it without the rest of MIXINv2.
 
       tablambdaSupplementarySourceFiles = lib.fileset.toSource {
         root = ../.;
@@ -165,6 +198,10 @@
           ../packages/tablambda/tests
           ../packages/tablambda/pyproject.toml
           ../packages/tablambda/README.md
+          ../packages/tablambda-examples/src
+          ../packages/tablambda-examples/tests
+          ../packages/tablambda-examples/pyproject.toml
+          ../packages/tablambda-examples/README.md
           ../packages/fixpoints/src
           ../packages/fixpoints/pyproject.toml
           ../packages/fixpoints/README.md
@@ -176,35 +213,38 @@
       tablambdaReviewerReadme = pkgs.writeText "README.md" ''
         # tablambda -- Supplementary Material
 
-        This archive contains `tablambda`, an executable first-order-shape-relation
-        interpreter for the pure lambda-calculus, together with its only dependency
-        `fixpoints`.
+        This archive contains `tablambda`, a tabled pure lambda-calculus interpreter
+        and compiler, the example applications `tablambda-examples`, and their only
+        dependency `fixpoints`.
 
         ## Directory structure
 
         - `tablambda-appendix.pdf` -- the paper's appendices, submitted here as
           supplemental material rather than in the main submission PDF.
-        - `packages/tablambda/src/tablambda/` -- the interpreter: the
-          weak-head shape relation `Sh`, the least-fixpoint readout, and four pluggable
-          position congruences.
+        - `packages/tablambda/src/tablambda/` -- the tabled interpreter
+          (`TabledWHNF`) and the defunctionalization compiler (`DEFUN`), together
+          with a prelude of Church numerals, Scott-encoded data types, and standard
+          combinators.
         - `packages/tablambda/tests/` -- the paper's examples as tests, including the
           cyclic stream `Y (cons 0)`, the unproductive cycles `Omega` and `Y (lambda x. x)`,
           the naive walk, and the ordinary `map` folding a cyclic list.
+        - `packages/tablambda-examples/src/tablambda_examples/` -- example applications
+          written as pure lambda terms (HOAS): edit distance, cyclic zeros, Omega, map
+          over a cyclic stream, minimax game search, and an even-parity DFA;
+          their committed defunctionalized (compiled) modules; and a benchmark comparing
+          interpreted versus compiled execution.
+        - `packages/tablambda-examples/tests/` -- tests for the example applications.
         - `packages/fixpoints/src/fixpoints/` -- least-fixpoint cached-property infrastructure.
 
         ## Running tests
 
         Requires Python >= 3.11 and [uv](https://docs.astral.sh/uv/).
+        A `uv.lock` is included for reproducible dependency resolution.
 
         ```
         uv sync
-        uv run pytest packages/tablambda/tests packages/fixpoints/tests
+        uv run pytest packages/tablambda/tests packages/tablambda-examples/tests packages/fixpoints/tests
         ```
-      '';
-
-      tablambdaWorkspacePyproject = pkgs.writeText "pyproject.toml" ''
-        [tool.uv.workspace]
-        members = ["packages/tablambda", "packages/fixpoints"]
       '';
 
       tablambdaSupplementaryMaterial = pkgs.stdenv.mkDerivation {
@@ -217,10 +257,10 @@
           mv source tablambda-supplementary-material
           cd tablambda-supplementary-material
 
-          # A minimal virtual-workspace root over just the two packages, and a
-          # reviewer-oriented README. No uv.lock: the reviewer locks the two-package
-          # workspace fresh, avoiding references to the absent MIXINv2 members.
-          cp ${tablambdaWorkspacePyproject} pyproject.toml
+          # The real workspace root (anonymized below) and its lockfile for
+          # reproducible dependency resolution, plus a reviewer-oriented README.
+          cp ${../pyproject.toml} pyproject.toml
+          cp ${../uv.lock} uv.lock
           cp ${tablambdaReviewerReadme} README.md
 
           # The paper's appendices as a separate PDF (POPL 2027 requires
@@ -250,12 +290,17 @@
           unzip $out -d $TMPDIR/verify
           base=$TMPDIR/verify/tablambda-supplementary-material
 
+          # Openable and extractable on Windows.
+          ${assertWindowsReadableArchive "$out"}
+
           # No identity leaks.
           ${assertNoIdentityLeak "$base"}
 
-          # Both packages present.
+          # All three packages present.
           test -d $base/packages/tablambda/src/tablambda
           test -d $base/packages/tablambda/tests
+          test -d $base/packages/tablambda-examples/src/tablambda_examples
+          test -d $base/packages/tablambda-examples/tests
           test -d $base/packages/fixpoints/src/fixpoints
 
           # The appendix PDF is bundled.

@@ -2,10 +2,10 @@
 % regenerate with: python -m tablambda_examples._cyclic_zeros_trace
 
 \begin{lstlisting}[language=]
-Out r:
+TabledWHNF r:
   WHNF:  Y (cons 0)  ->  W W  ->  cons 0 (W W)
   compute r => cons 0 (W W)
-  Out W W:
+  TabledWHNF W W:
     WHNF:  W W  ->  cons 0 (W W)
     compute W W => cons 0 (W W)
     tail W W: on the stack -> back edge (cycle closes)
