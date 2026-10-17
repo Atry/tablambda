@@ -30,4 +30,4 @@ tablambda-omega-code = "tablambda_examples._omega_code:main"
 sources = { "tablambda" = { workspace = true } }
 
 [project.urls]
-Repository = "https://github.com/Atry/MIXINv2"
+Repository = "https://github.com/Atry/tablambda"
