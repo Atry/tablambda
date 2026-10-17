@@ -34,4 +34,4 @@ only-include = ["src/fixpoints"]
 sources = ["src"]
 
 [project.urls]
-Repository = "https://github.com/Atry/MIXINv2"
+Repository = "https://github.com/Atry/tablambda"
