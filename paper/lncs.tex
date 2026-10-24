@@ -1,5 +1,5 @@
-%% FLOPS entry: Springer LNCS, single-blind, the appendix following the references
-%% in the same PDF (FLOPS counts neither towards its page limit). The shared body
+%% Springer LNCS entry: the authors named, the appendix following the references in
+%% the same PDF. The shared body
 %% tablambda.tex keeps every acmart-only command behind \ifTablambdaLNCS, so the
 %% acmart entries (preprint, submission, supplement) build unchanged.
 % 作者裁定（2026-10-07）：\anon 宏保留；"ACM命令能不能用条件隐藏？"——本入口只设开关、补上 acmart 原本代为
@@ -33,9 +33,12 @@
 %% sorts and compresses the numeric labels).
 \usepackage{cite}
 
-%% acmart's \anon[anonymous text]{real text}: FLOPS reviews single-blind, so the real
-%% text is shown.
+%% acmart's \anon[anonymous text]{real text}: this entry names the authors, so the
+%% real text is shown, the author block included.
 \newcommand{\anon}[2][]{#2}
+
+%% The paper's category and its authors' student status, stated on the first page.
+\newcommand{\tablambdaTitleNote}{\thanks{Research paper. No author is a research student.}}
 
 %% The LNCS text block is narrower than acmsmall's, and a line that starts with a long
 %% inline term has few spaces to stretch; a little last-resort stretch lets it break

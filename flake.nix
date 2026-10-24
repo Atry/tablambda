@@ -24,6 +24,12 @@
   };
   inputs = {
     systems.url = "github:nix-systems/default";
+    # FIXME: flake.lock pins this input to f667e4c3, GitHub's test merge of
+    # NixOS/nixpkgs#569745 into master, so that this flake and the monorepo it is
+    # developed in build the same derivations (the pin fixes texlive's minted under
+    # Python 3.14 for the monorepo's other papers). GitHub regenerates a test-merge ref
+    # when master moves, so the revision may stop being fetchable. Relock to
+    # nixos-unstable once #569745 is merged there.
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-parts = {
       url = "github:hercules-ci/flake-parts";

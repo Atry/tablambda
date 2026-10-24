@@ -36,8 +36,21 @@
 %% every break opportunity (autobreak breaks at source line ends). We avoid breqn,
 %% whose flexisym makes 8-bit characters active and clashes with CJKutf8 in the
 %% Chinese build; autobreak has no such conflict and renders identically in both
-%% builds.
+%% builds. LaTeXML (arXiv's HTML conversion) has no working autobreak, so there
+%% the environment is empty and each term is one unbroken formula; HTML reflows
+%% math anyway.
+\usepackage{latexml}
+\iflatexml
+\newenvironment{autobreak}{}{}
+\else
 \usepackage{autobreak}
+\fi
+
+%% acmart defines \anon and lncs.tex defines its own; LaTeXML's acmart binding
+%% does not, so supply the non-anonymous reading the preprint uses.
+\providecommand{\anon}[2][]{#2}
+%% A footnote on the LNCS title; lncs.tex states the paper's category in it.
+\providecommand{\tablambdaTitleNote}{}
 
 % --- draft placeholder macro ------------------------------------------
 \newcommand{\TODO}[1]{\textcolor{red}{[\textbf{TODO:} #1]}}
@@ -91,7 +104,7 @@
 % the existing pdfLaTeX entries (preprint.tex / submission.tex / supplement.tex)
 % are unaffected; preprint-zh.tex sets it true and is built with pdfLaTeX and CJKutf8.
 \@ifundefined{ifPaperChinese}{\newif\ifPaperChinese\PaperChinesefalse}{}
-% Document-class switch. Defaults to false (acmart, the PACMPL entries); flops.tex
+% Document-class switch. Defaults to false (acmart, the PACMPL entries); lncs.tex
 % sets it true for Springer LNCS. Every acmart-only command in this file sits in
 % \ifTablambdaLNCS\else ... \fi, so the acmart entries are unchanged.
 \@ifundefined{ifTablambdaLNCS}{\newif\ifTablambdaLNCS\TablambdaLNCSfalse}{}
@@ -193,7 +206,7 @@
   % Keep it ASCII English in both builds: those are typeset in the output routine and
   % at \end{document}, outside the CJK* environment, where Chinese bytes would fail.
   \ifTablambdaLNCS
-  \title{\bilingual{Cyclic Graphs and Memoization in Pure $\lambda$-Calculus}{纯 $\lambda$-演算中的环图与记忆化}}
+  \title{\bilingual{Cyclic Graphs and Memoization in Pure $\lambda$-Calculus}{纯 $\lambda$-演算中的环图与记忆化}\tablambdaTitleNote}
   \titlerunning{Cyclic Graphs and Memoization in Pure $\lambda$-Calculus}
   \else
   \title[Cyclic Graphs and Memoization in Pure $\lambda$-Calculus]{\bilingual{Cyclic Graphs and Memoization in Pure $\lambda$-Calculus}{纯 $\lambda$-演算中的环图与记忆化}}
@@ -206,9 +219,11 @@
   \fi
 
   \ifTablambdaLNCS
-  \author{Bo Yang\orcidID{0000-0003-2757-9115}\thanks{The author completed this work independently and outside the scope of employment at Figure AI. No Figure AI time, funding, or other resources were used in support of this work.}}
-  \authorrunning{B. Yang}
-  \institute{Figure AI Inc., San Jose, California, USA\\ \email{yang-bo@yang-bo.com}}
+  % llncs has no anonymous option; the author block goes through \anon, as the body's
+  % other identifying text does.
+  \author{\anon[Anonymous Author]{Bo Yang\orcidID{0000-0003-2757-9115}\thanks{The author completed this work independently and outside the scope of employment at Figure AI. No Figure AI time, funding, or other resources were used in support of this work.}}}
+  \authorrunning{\anon[Anonymous]{B. Yang}}
+  \institute{\anon[Anonymous Institution]{Figure AI Inc., San Jose, California, USA\\ \email{yang-bo@yang-bo.com}}}
   \else
   \author{Bo Yang}
   \orcid{0000-0003-2757-9115}

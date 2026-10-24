@@ -12,54 +12,55 @@
     let
       # TeXLive packages shared by the dev-shell paper build and the standalone appendix
       # PDF derivation below.
+      # Packages beyond pkgs.texliveSmall (scheme-small), the base of paperTexlive below
+      # and of the dev shell's languages.texlive. Each one is listed because a build of
+      # this paper reads a file of it (the .fls recorder); packages the builds read that
+      # scheme-small already carries (pgf, upquote, the expl3 runtime, ...) are not listed.
       texlivePackages = [
-        "scheme-medium"
-        "cjk"
-        "xpinyin"
         "latexmk"
         # CJKutf8 (from cjk) renders the Chinese preprint (preprint-zh.tex) under
         # pdfLaTeX, like the English entries; arphic supplies the gbsn (SongTi)
         # Type1 font it uses, so the build needs no system fonts.
+        "cjk"
         "arphic"
-        # acmart dependencies not in scheme-medium
+        # The acmart class and its ACM-Reference-Format.bst, which scheme-small lacks.
+        "acmart"
+        # acmart dependencies not in scheme-small. libertine (with fontaxes and
+        # mweights, which it loads), newtx and inconsolata are its text, math and
+        # typewriter fonts; newtxmath reads kastrup's binhex.tex; fontname's
+        # texfonts.map is read by kpathsea's font name lookups.
         "xstring"
         "totpages"
         "environ"
         "trimspaces"
         "ncctools"
         "comment"
-        "pbalance"
-        # upquote: listings renders straight quotes in the generated code
-        "upquote"
+        "hyperxmp"
+        "kastrup"
+        "ifmtarg"
         "libertine"
+        "fontaxes"
+        "mweights"
         "inconsolata"
         "newtx"
-        "hyperxmp"
-        "ifmtarg"
-        "draftwatermark"
-        "preprint"
-        "tex-gyre"
-        "multirow"
-        "zref"
-        # algorithm2e for the section 2 weak-head / tabling pseudocode
+        "fontname"
+        # algorithm2e for the section 2 weak-head / tabling pseudocode; it loads
+        # relsize and ifoddpage.
         "algorithm2e"
         "relsize"
         "ifoddpage"
-        # pgf/tikz for the section 3 edit-distance call-tree / DP-grid figure
-        "pgf"
         # autobreak wraps the long lambda terms in the appendix code listings,
         # breaking them at source line ends inside align*.
         "autobreak"
-        # expl3 runtime, used by acmart and other packages.
-        "l3kernel"
-        "l3packages"
         # Springer's llncs class and splncs04 bibliography style, for the LNCS
-        # entry (flops.tex).
+        # entry (lncs.tex).
         "llncs"
+        # Type 1 cm-super fonts for lncs.tex's T1 encoding.
+        "cm-super"
       ];
 
-      paperTexlive = pkgs.texlive.combine
-        (lib.genAttrs texlivePackages (name: pkgs.texlive.${name}));
+      paperTexlive = pkgs.texliveSmall.withPackages
+        (ps: map (name: ps.${name}) texlivePackages);
 
       # The appendix-only build (supplement.tex) of a paper, for inclusion
       # in its anonymized supplementary-material bundle (see
@@ -122,16 +123,16 @@
         ../paper/submission.tex
         ../paper/preprint.tex
         ../paper/preprint-zh.tex
-        # The LNCS entry for FLOPS, and the ACM CCS block the acmart entries
+        # The Springer LNCS entry, and the ACM CCS block the acmart entries
         # \input (kept in its own file because the comment package cannot read
         # a CCSXML environment from inside a TeX conditional).
-        ../paper/flops.tex
+        ../paper/lncs.tex
         ../paper/ccs-concepts.tex
         # \input by submission.tex and supplement.tex (drops acmart's tocindent
         # labels when importing the cross-document .aux via xr-hyper).
         ../paper/xr-tocindent-filter.tex
-        ../paper/acmart.cls
-        ../paper/ACM-Reference-Format.bst
+        # The pdfLaTeX stand-in for LaTeXML's latexml package (\iflatexml false).
+        ../paper/latexml.sty
         ../paper/references.bib
         ../paper/latexmkrc
         ../paper/generated
@@ -152,13 +153,13 @@
         anonymous = true;
       };
 
-      # The FLOPS submission: Springer LNCS, single-blind, the appendix following
+      # The Springer LNCS version: the authors named, the appendix following
       # the references in the same PDF.
-      tablambdaFlopsPdf = mkPaperPdf {
-        name = "tablambda-flops.pdf";
+      tablambdaLncsPdf = mkPaperPdf {
+        name = "tablambda-lncs.pdf";
         root = ../paper;
         fileset = tablambdaSources;
-        entry = "flops";
+        entry = "lncs";
       };
 
       # The Chinese preprint: the same full document as the English preprint with
@@ -218,7 +219,7 @@
       tablambdaTexlivePackages = texlivePackages;
       packages.tablambda-appendix = tablambdaAppendixPdf;
       packages.tablambda-submission = tablambdaSubmissionPdf;
-      packages.tablambda-flops = tablambdaFlopsPdf;
+      packages.tablambda-lncs = tablambdaLncsPdf;
       packages.tablambda-preprint-zh = tablambdaPreprintZhPdf;
       packages.tablambda-arxiv = tablambdaArxiv;
     };
